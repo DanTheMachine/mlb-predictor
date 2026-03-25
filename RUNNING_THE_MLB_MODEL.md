@@ -6,11 +6,17 @@
 npm install
 ```
 
-## Start The Proxy For Live Data
+## Start The Proxy
 
-The MLB app now uses a local proxy for live schedule, probable starters, weather, lineup confirmation, and ESPN odds.
+The MLB app uses a local proxy for:
 
-Run this in a separate terminal from the MLB app folder:
+- MLB schedule and probable starters
+- MLB lineup checks
+- MLB team stats used for model refresh
+- weather
+- ESPN odds
+
+Run this from `C:\projects\game_sims\mlb_predictor` in a separate terminal:
 
 ```bash
 npm run proxy
@@ -18,43 +24,63 @@ npm run proxy
 
 The proxy listens on `http://localhost:8787`.
 
-If you only want to use manual/sample workflows, the proxy is optional. If you want `Load Live Slate` or `Refresh Live Slate` to work, start the proxy first.
-
-## Start Dev Server
+## Start The App
 
 ```bash
 npm run dev
 ```
 
-With both processes running:
+Recommended startup order:
 
-1. Start the proxy with `npm run proxy`
-2. Start the app with `npm run dev`
+1. `npm run proxy`
+2. `npm run dev`
 3. Open the MLB predictor UI
-4. Use `Load Live Slate` to pull live schedule data
 
-If live loading fails, the first thing to check is whether the proxy terminal is running cleanly.
+## Normal Predictor Workflow
 
-## Run Typecheck
+1. Set `Live Slate Date`
+2. Click `Fetch MLB Data`
+   - refreshes team-level ratings used by the model
+3. Click `Load Games`
+   - loads the slate
+   - loads lineups
+   - loads weather
+   - loads ESPN odds when available
+4. Optionally use `Bulk Edit Lines`
+   - pasted lines become active `Manual` odds
+5. Click `Run All Sims`
+6. Export `Predictions`
+7. Export `Results`
+
+## Notes
+
+- `Load Sample Slate` does not require the proxy.
+- `Bulk Edit Lines` does not require the proxy.
+- `Fetch MLB Data` and `Load Games` do require the proxy.
+- `Results` exports the previous day’s completed MLB results.
+- `Odds live` counts both `ESPN live` and `Manual` odds.
+- `Market fallback active` means the card is still using model-generated default odds.
+
+## Validation Commands
 
 ```bash
 npm run typecheck
 ```
 
-## Run Tests
-
 ```bash
 npm run test
 ```
 
-## Run E2E
-
 ```bash
-npm run test:e2e
+npm run build
 ```
 
-## Quick Notes
+## CI
 
-- `Load Sample Slate` does not require the proxy.
-- `Import Pasted Odds` does not require the proxy.
-- Live slate features do require the proxy.
+GitHub Actions now runs the same core checks in CI from `.github/workflows/ci.yml`:
+
+- `npm run lint`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run test:e2e`

@@ -1,6 +1,6 @@
 # MLB Predictor
 
-MLB predictor app scaffold for the `game_sims` workspace.
+MLB predictor app for the `game_sims` workspace.
 
 ## Stack
 
@@ -11,22 +11,65 @@ MLB predictor app scaffold for the `game_sims` workspace.
 - Playwright
 - ESLint
 
-## Current Status
+## Current App
 
-Phase 0 scaffold is in place. The app currently includes:
+The MLB app is no longer a scaffold. It now includes:
 
-- project configs and scripts
-- base React entry points
-- placeholder component, hook, and library modules
-- starter unit and e2e tests
-- planning docs for the MLB build and intelligence roadmap
+- Predictor / Results Tracker / Model Eval tabs
+- live MLB team-model refresh
+- daily schedule loading
+- live weather and ESPN odds integration
+- bulk manual line editing
+- single-game simulator tools
+- prediction export and results export for grading
 
-## Planned Next Phase
+## Core Workflow
 
-Phase 1 will add:
+1. Select `Live Slate Date`
+2. Click `Fetch MLB Data`
+3. Click `Load Games`
+4. Optionally use `Bulk Edit Lines`
+5. Click `Run All Sims`
+6. Export `Predictions`
+7. Export `Results`
 
-- MLB domain types
-- baseline team, starter, and bullpen data
-- v1 game projection engine
-- single-game controls and results UI
-- betting analysis logic
+## Odds Behavior
+
+The app supports three odds states:
+
+- `ESPN live`
+- `Manual`
+- `Model default`
+
+`Odds live` remains satisfied for both `ESPN live` and `Manual`.
+
+`Market fallback active` means the game is still using `Model default` odds.
+
+## Grading Files
+
+`Predictions` export contains:
+
+- model recommendations
+- edge percentages
+- moneyline / run line / total odds
+- `LookupKey`
+
+`Results` export contains:
+
+- final scores
+- `LookupKey`
+
+These two files are intended to be used together in Model Eval for grading and ROI analysis.
+
+## CI
+
+GitHub Actions now runs automated CI for the MLB app on pushes to `main` / `master` and on pull requests.
+
+The workflow runs:
+
+- `npm ci`
+- `npm run lint`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run test:e2e`
