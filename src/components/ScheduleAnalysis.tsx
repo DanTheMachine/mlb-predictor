@@ -1,0 +1,790 @@
+import { useMemo, useState } from 'react'
+
+import { analyzeBetting } from '../lib/betting'
+import { parseBulkOdds } from '../lib/bulkOddsParser'
+import { buildCompositeRecommendation } from '../lib/compositeRecommendation'
+import { fetchCompletedGameResults, fetchLiveScheduleRows } from '../lib/mlbApi'
+import {
+  createDefaultBullpenWorkload,
+  getDefaultStarter,
+  getStartersForTeam,
+  predictGame,
+} from '../lib/mlbModel'
+import type { CompositeRecommendation, OddsInput, ScheduleRow, TeamAbbr, TeamStats, WindDirection } from '../lib/mlbTypes'
+
+const SAMPLE_SLATE: Array<{ awayTeam: TeamAbbr; homeTeam: TeamAbbr; gameTime: string }> = [
+  { awayTeam: 'ATL', homeTeam: 'LAD', gameTime: '7:10 PM' },
+  { awayTeam: 'NYY', homeTeam: 'BOS', gameTime: '7:15 PM' },
+  { awayTeam: 'SEA', homeTeam: 'HOU', gameTime: '8:10 PM' },
+  { awayTeam: 'PHI', homeTeam: 'SD', gameTime: '9:40 PM' },
+]
+
+type ScheduleAnalysisProps = {
+  teams: Record<TeamAbbr, TeamStats>
+  teamDataTone: 'neutral' | 'success' | 'error'
+  teamDataStatus: string
+  teamsUpdated: boolean
+  teamsUpdatedAt: string | null
+  loadedSeason: number | null
+  // eslint-disable-next-line no-unused-vars
+  fetchTeamData: (...args: [string]) => Promise<void>
+}
+
+export function ScheduleAnalysis({
+  teams,
+  teamDataTone,
+  teamDataStatus,
+  teamsUpdated,
+  teamsUpdatedAt,
+  loadedSeason,
+  fetchTeamData,
+}: ScheduleAnalysisProps) {
+  const [rows, setRows] = useState<ScheduleRow[]>([])
+  const [bulkPaste, setBulkPaste] = useState('')
+  const [bulkStatus, setBulkStatus] = useState('Load the sample slate or paste sportsbook odds to build the board.')
+  const [bulkStatusTone, setBulkStatusTone] = useState<'neutral' | 'success' | 'error'>('neutral')
+  const [bulkError, setBulkError] = useState('')
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
+  const [liveDate, setLiveDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [gamesLoading, setGamesLoading] = useState(false)
+  const [lastLiveRefresh, setLastLiveRefresh] = useState<string | null>(null)
+  const [bulkEditorOpen, setBulkEditorOpen] = useState(false)
+  const [resultsLoading, setResultsLoading] = useState(false)
+
+  const enrichedRows = useMemo(
+    () =>
+      rows.map((row) => {
+        const analysis = row.result ? analyzeBetting(row.result, row.odds) : null
+        const composite = row.result ? buildCompositeRecommendation(row, analysis) : null
+        return { row: { ...row, compositeRecommendation: composite }, analysis, composite }
+      }),
+    [rows],
+  )
+
+  const liveBoardSummary = useMemo(() => {
+    return {
+      totalGames: rows.length,
+      teamsUpdated,
+      oddsLiveCount: rows.filter((row) => row.odds.source !== 'model').length,
+      weatherLiveCount: rows.filter((row) => Boolean(row.weatherLastUpdated)).length,
+      lineupConfirmedCount: rows.filter(
+        (row) => row.awayLineupConfidence === 'Confirmed' && row.homeLineupConfidence === 'Confirmed',
+      ).length,
+      lineupPendingCount: rows.filter(
+        (row) => row.awayLineupConfidence !== 'Confirmed' || row.homeLineupConfidence !== 'Confirmed',
+      ).length,
+    }
+  }, [rows, teamsUpdated])
+
+  const loadSampleSlate = () => {
+    setRows(
+      SAMPLE_SLATE.map((game, index) => createIntelligenceRow(game.awayTeam, game.homeTeam, game.gameTime, index, defaultOddsForGame(teams, game.homeTeam, game.awayTeam))),
+    )
+    setBulkStatus('Sample MLB slate loaded with starter, lineup, weather, bullpen, and sharp-style context.')
+    setBulkStatusTone('success')
+    setBulkError('')
+    setLastLiveRefresh(null)
+  }
+
+  const handleBulkImport = () => {
+    try {
+      const games = parseBulkOdds(bulkPaste)
+      const incomingByMatchup = new Map(games.map((game) => [`${game.awayAbbr}-${game.homeAbbr}`, game.odds]))
+
+      setRows((prev) => {
+        if (!prev.length) {
+          return games.map((game, index) => createIntelligenceRow(game.awayAbbr, game.homeAbbr, `${7 + index}:10 PM`, index, game.odds))
+        }
+
+        const updated = prev.map((row) => {
+          const key = `${row.game.awayTeam}-${row.game.homeTeam}`
+          const importedOdds = incomingByMatchup.get(key)
+          if (!importedOdds) return row
+
+          return {
+            ...row,
+            odds: {
+              ...importedOdds,
+              source: 'manual',
+            },
+          }
+        })
+
+        return updated
+      })
+      setBulkStatus(`Lines updated successfully at ${formatTimestamp(new Date().toISOString())}. Games Updated: ${games.length}`)
+      setBulkStatusTone('success')
+      setBulkError('')
+      setBulkEditorOpen(false)
+    } catch (error) {
+      setBulkStatusTone('error')
+      setBulkError(error instanceof Error ? error.message : 'Bulk import failed.')
+    }
+  }
+
+  const loadGames = async () => {
+    setGamesLoading(true)
+    setBulkError('')
+
+    try {
+      const slateRows = await fetchLiveScheduleRows(liveDate)
+      setRows(slateRows)
+      setExpandedIdx(null)
+      const fetchedAt = new Date().toISOString()
+      setLastLiveRefresh(fetchedAt)
+      setBulkStatus(
+        slateRows.length
+          ? `Games loaded at ${formatTimestamp(fetchedAt)}. Slate: ${slateRows.length} Weather: ${slateRows.filter((row) => Boolean(row.weatherLastUpdated)).length} Odds: ${slateRows.filter((row) => row.odds.source !== 'model').length}`
+          : `No live MLB games were returned for ${liveDate}.`,
+      )
+      setBulkStatusTone('success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Load games failed.'
+      setBulkError(message)
+      setBulkStatus(`Load games failed at ${formatTimestamp(new Date().toISOString())}.`)
+      setBulkStatusTone('error')
+    } finally {
+      setGamesLoading(false)
+    }
+  }
+
+  const runAllProjections = () => {
+    setRows((prev) =>
+      prev.map((row) => {
+        const result = predictGame({
+          homeTeam: teams[row.game.homeTeam],
+          awayTeam: teams[row.game.awayTeam],
+          homeStarter: row.homeStarter,
+          awayStarter: row.awayStarter,
+          gameType: 'Regular Season',
+          temperature: row.temperature,
+          windMph: row.windMph,
+          windDirection: row.windDirection,
+          homeBullpenFatigue: row.homeBullpenFatigue,
+          awayBullpenFatigue: row.awayBullpenFatigue,
+          homeBullpenWorkload: row.homeBullpenWorkload,
+          awayBullpenWorkload: row.awayBullpenWorkload,
+          homeLineupConfidence: row.homeLineupConfidence,
+          awayLineupConfidence: row.awayLineupConfidence,
+        })
+        const analysis = analyzeBetting(result, row.odds)
+        return { ...row, result, compositeRecommendation: buildCompositeRecommendation({ ...row, result }, analysis) }
+      }),
+    )
+    setBulkStatus('Ran projections for the current slate and refreshed composite recommendations.')
+    setBulkStatusTone('success')
+  }
+
+  const exportPredictionsCsv = () => {
+    const exportDate = liveDate
+    const header = [
+      'Date',
+      'GameTime',
+      'Away',
+      'Home',
+      'AwayStarter',
+      'HomeStarter',
+      'AwayRuns',
+      'HomeRuns',
+      'Total',
+      'Margin',
+      'HomeWinProb',
+      'AwayWinProb',
+      'MoneylineRec',
+      'MoneylineEdgePct',
+      'RunLineRec',
+      'RunLineEdgePct',
+      'TotalRec',
+      'TotalEdgePct',
+      'MarketTotal',
+      'HomeML',
+      'AwayML',
+      'RunLine',
+      'RunLineHomeOdds',
+      'RunLineAwayOdds',
+      'OverOdds',
+      'UnderOdds',
+      'AwayLineupConfidence',
+      'HomeLineupConfidence',
+      'StarterFreshness',
+      'WeatherFreshness',
+      'SharpFreshness',
+      'CompositeMarket',
+      'CompositePick',
+      'CompositeScore',
+      'CompositeTier',
+      'CompositeReasons',
+      'LookupKey',
+    ]
+    const lines = enrichedRows
+      .filter((entry) => entry.row.result)
+      .map(({ row, analysis, composite }) =>
+        [
+          exportDate,
+          row.game.gameTime,
+          row.game.awayTeam,
+          row.game.homeTeam,
+          row.awayStarter.name,
+          row.homeStarter.name,
+          row.result?.projectedAwayRuns.toFixed(2) ?? '',
+          row.result?.projectedHomeRuns.toFixed(2) ?? '',
+          row.result?.projectedTotal.toFixed(2) ?? '',
+          row.result?.projectedMargin.toFixed(2) ?? '',
+          row.result ? (row.result.homeWinProb * 100).toFixed(1) : '',
+          row.result ? (row.result.awayWinProb * 100).toFixed(1) : '',
+          analysis?.mlValueSide === 'none' ? 'PASS' : `${analysis?.mlValueSide?.toUpperCase()} ML`,
+          analysis?.mlValuePct.toFixed(1) ?? '',
+          analysis?.runLineRec.toUpperCase() ?? 'PASS',
+          analysis?.runLineEdge.toFixed(1) ?? '',
+          analysis?.ouRec.toUpperCase() ?? 'PASS',
+          analysis?.ouEdgePct.toFixed(1) ?? '',
+          row.odds.overUnder.toFixed(1),
+          String(row.odds.homeMoneyline),
+          String(row.odds.awayMoneyline),
+          String(row.odds.runLine),
+          String(row.odds.runLineHomeOdds),
+          String(row.odds.runLineAwayOdds),
+          String(row.odds.overOdds),
+          String(row.odds.underOdds),
+          row.awayLineupConfidence,
+          row.homeLineupConfidence,
+          freshnessLabel(row.starterLastUpdated),
+          freshnessLabel(row.weatherLastUpdated),
+          freshnessLabel(row.sharpInput?.lastUpdated),
+          composite?.primaryMarket ?? 'PASS',
+          composite?.pick ?? 'PASS',
+          composite?.score.toFixed(1) ?? '0.0',
+          composite?.tier ?? 'PASS',
+          composite?.reasons.join(' | ') ?? '',
+          lookupKey(exportDate, row.game.homeTeam, row.game.awayTeam),
+        ].map(csvEscape).join(','),
+      )
+    const csv = [header.map(csvEscape).join(','), ...lines].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `mlb-predictions-${exportDate}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    setBulkStatus(`Predictions exported for ${exportDate}.`)
+    setBulkStatusTone('success')
+  }
+
+  const exportResultsCsv = async () => {
+    setResultsLoading(true)
+    setBulkError('')
+
+    try {
+      const resultsDate = subtractOneDay(liveDate)
+      const results = await fetchCompletedGameResults(resultsDate)
+      const header = ['Date', 'Away', 'Home', 'AwayScore', 'HomeScore', 'LookupKey']
+      const lines = results.map((row) =>
+        [row.date, row.away, row.home, String(row.awayScore), String(row.homeScore), row.lookupKey].map(csvEscape).join(','),
+      )
+      const csv = [header.map(csvEscape).join(','), ...lines].join('\n')
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `mlb-results-${resultsDate}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+      setBulkStatus(results.length ? `Results exported for ${resultsDate}.` : `No final MLB results were available for ${resultsDate}.`)
+      setBulkStatusTone('success')
+    } catch (error) {
+      setBulkStatusTone('error')
+      setBulkError(error instanceof Error ? error.message : 'Results export failed.')
+    } finally {
+      setResultsLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="data-source-panel">
+        <div>
+          <p className={`subtle-copy ${teamDataTone === 'success' ? 'success-copy' : teamDataTone === 'error' ? 'error-copy' : ''}`}>{teamDataStatus}</p>
+        </div>
+        <div className="fetch-panel-actions">
+          <button
+            className={`secondary-button ${teamDataTone === 'success' ? 'secondary-button-success' : teamDataTone === 'error' ? 'secondary-button-error' : ''}`}
+            onClick={() => void fetchTeamData(liveDate)}
+          >
+            Fetch MLB Data
+          </button>
+        </div>
+      </div>
+
+      <section className="panel daily-schedule-panel">
+        <div className="daily-schedule-header">
+          <div className="daily-schedule-header-main">
+            <h2>Daily Schedule</h2>
+            <div className="meta-chip-row daily-status-row">
+              <span className={`meta-chip ${liveBoardSummary.teamsUpdated ? 'live-chip' : ''}`}>Teams Updated</span>
+              <span
+                className={`meta-chip ${
+                  liveBoardSummary.totalGames > 0 && liveBoardSummary.lineupConfirmedCount === liveBoardSummary.totalGames ? 'live-chip' : ''
+                }`}
+              >
+                Full lineups {liveBoardSummary.lineupConfirmedCount}/{liveBoardSummary.totalGames}
+              </span>
+              <span
+                className={`meta-chip ${
+                  liveBoardSummary.totalGames > 0 && liveBoardSummary.oddsLiveCount === liveBoardSummary.totalGames ? 'live-chip' : ''
+                }`}
+              >
+                Odds live {liveBoardSummary.oddsLiveCount}/{liveBoardSummary.totalGames}
+              </span>
+              <span
+                className={`meta-chip ${
+                  liveBoardSummary.totalGames > 0 && liveBoardSummary.weatherLiveCount === liveBoardSummary.totalGames ? 'live-chip' : ''
+                }`}
+              >
+                Weather live {liveBoardSummary.weatherLiveCount}/{liveBoardSummary.totalGames}
+              </span>
+            </div>
+          </div>
+          <button className="primary-button header-load-button" onClick={() => void loadGames()} disabled={gamesLoading}>
+            {gamesLoading ? 'Loading Games...' : 'Load Games'}
+          </button>
+        </div>
+
+      <div className="schedule-toolbar">
+        <label className="field live-date-field">
+          <span>Live Slate Date</span>
+          <input type="date" value={liveDate} onChange={(event) => setLiveDate(event.target.value)} />
+        </label>
+          <button className="secondary-button toolbar-button" onClick={loadSampleSlate}>
+            Load Sample Slate
+          </button>
+          <button className="secondary-button toolbar-button" onClick={() => setBulkEditorOpen((prev) => !prev)}>
+            {bulkEditorOpen ? 'Hide Bulk Edit Lines' : 'Bulk Edit Lines'}
+          </button>
+          <button className="secondary-button toolbar-button" onClick={runAllProjections} disabled={!rows.length}>
+            Run All Sims
+          </button>
+          <button className="secondary-button toolbar-button" onClick={exportPredictionsCsv} disabled={!enrichedRows.some((entry) => entry.row.result)}>
+            Predictions
+          </button>
+          <button className="secondary-button toolbar-button" onClick={() => void exportResultsCsv()} disabled={resultsLoading}>
+            {resultsLoading ? 'Loading Results...' : 'Results'}
+          </button>
+        </div>
+
+      <p className={`subtle-copy schedule-status-line ${bulkError ? 'error-copy' : bulkStatusTone === 'success' ? 'success-copy' : ''}`}>{bulkError || bulkStatus}</p>
+      {liveBoardSummary && lastLiveRefresh ? (
+        <p className="subtle-copy success-copy schedule-timestamp schedule-status-line">
+          Last slate refresh {freshnessLabel(lastLiveRefresh)}
+          {teamsUpdatedAt ? ` · Team model ${freshnessLabel(teamsUpdatedAt)}` : ''}
+          {loadedSeason ? ` · Stats season ${loadedSeason}` : ''}
+        </p>
+      ) : null}
+
+      {bulkEditorOpen ? (
+        <div className="subsection">
+          <textarea
+            className="bulk-textarea"
+            value={bulkPaste}
+            onChange={(event) => setBulkPaste(event.target.value)}
+            placeholder="Paste sportsbook blocks here to build an MLB slate..."
+          />
+          <div className="action-row bulk-edit-actions">
+            <button className="primary-button bulk-edit-button" onClick={handleBulkImport}>
+              Import Pasted Odds
+            </button>
+            <button className="secondary-button bulk-edit-button" onClick={() => setBulkPaste('')} disabled={!bulkPaste.trim()}>
+              Clear
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {enrichedRows.length ? (
+        <div className="schedule-list">
+          {enrichedRows.map(({ row, analysis, composite }, idx) => {
+            const expanded = expandedIdx === idx
+            const primaryPick = composite?.pick ?? 'PASS'
+            const feedFlags = cardFeedFlags(row)
+
+            return (
+              <article key={`${row.game.awayTeam}-${row.game.homeTeam}-${row.game.gameTime}`} className="schedule-card">
+                <button className="schedule-card-header" onClick={() => setExpandedIdx(expanded ? null : idx)}>
+                  <div>
+                    <strong>{`${displayTeamName(row.game.awayTeam, teams)} at ${displayTeamName(row.game.homeTeam, teams)} · ${row.game.gameTime} · ${row.awayStarter.name} vs ${row.homeStarter.name}`}</strong>
+                    <span>{headerOddsSummary(row.odds)}</span>
+                  </div>
+                  <div>
+                    <strong>{primaryPick}</strong>
+                    <span>{composite ? `Tier ${composite.tier} · Score ${composite.score.toFixed(1)}` : 'Projection pending'}</span>
+                  </div>
+                </button>
+
+                <div className="meta-chip-row">
+                  <span className="meta-chip">
+                    Lineups: {lineupStatusMark(row.awayLineupConfidence)} | {lineupStatusMark(row.homeLineupConfidence)}
+                  </span>
+                  <span className="meta-chip">Wind {row.windDirection} {row.windMph} mph</span>
+                  <span className="meta-chip">{row.temperature}°F</span>
+                  <span className="meta-chip">Odds {oddsSourceLabel(row.odds.source)}</span>
+                  <span className="meta-chip">Starter Check: {freshnessLabel(row.starterLastUpdated)}</span>
+                </div>
+                {feedFlags.length ? (
+                  <div className="fallback-row">
+                    {feedFlags.map((flag) => (
+                      <span key={flag} className="fallback-chip">
+                        {flag}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                {expanded ? (
+                  <div className="schedule-card-body">
+                    {composite ? (
+                      <div className="metric-grid">
+                        <article className="mini-card">
+                          <span>Composite Recommendation</span>
+                          <strong>{composite.pick}</strong>
+                          <small>Tier {composite.tier} · Score {composite.score.toFixed(1)}</small>
+                          <small>{composite.reasons.join(' · ')}</small>
+                        </article>
+                        <article className="mini-card">
+                          <span>Model And Market</span>
+                          <strong>{row.result ? `${row.result.projectedAwayRuns.toFixed(2)} to ${row.result.projectedHomeRuns.toFixed(2)}` : 'Run all projections'}</strong>
+                          <small>ML {analysis?.mlValuePct.toFixed(1) ?? '0.0'}% · RL {analysis?.runLineEdge.toFixed(1) ?? '0.0'}% · OU {analysis?.ouEdgePct.toFixed(1) ?? '0.0'}%</small>
+                        </article>
+                        <article className="mini-card">
+                          <span>Freshness</span>
+                          <strong>Lineups {freshnessLabel(row.lineupLastUpdated)}</strong>
+                          <small>Weather {freshnessLabel(row.weatherLastUpdated)} · Sharp {freshnessLabel(row.sharpInput?.lastUpdated)}</small>
+                          <small>{feedHealthSummary(row)}</small>
+                        </article>
+                      </div>
+                    ) : null}
+
+                    <div className="metric-grid">
+                      <article className="mini-card">
+                        <span>Away Team Ratings</span>
+                        <strong>{row.game.awayTeam} split {awaySplitRating(row, teams)}</strong>
+                        <small>{ratingDetailLine([
+                          ['Power', teams[row.game.awayTeam].power, 'Extra-base hit and home-run profile in the run-scoring model.'],
+                          ['Contact', teams[row.game.awayTeam].contact, 'How well the lineup avoids empty at-bats and puts balls in play.'],
+                          ['Discipline', teams[row.game.awayTeam].discipline, 'Walks, zone control, and count leverage.'],
+                        ])}</small>
+                        <small>{ratingDetailLine([
+                          ['Baserunning', teams[row.game.awayTeam].baserunning, 'Run creation added through steals and advancement.'],
+                          ['Defense', teams[row.game.awayTeam].defense, 'Run prevention from fielding quality.'],
+                          ['Bullpen', teams[row.game.awayTeam].bullpen, 'Relief run prevention quality before workload adjustments.'],
+                        ])}</small>
+                      </article>
+                      <article className="mini-card">
+                        <span>Home Team Ratings</span>
+                        <strong>{row.game.homeTeam} split {homeSplitRating(row, teams)}</strong>
+                        <small>{ratingDetailLine([
+                          ['Power', teams[row.game.homeTeam].power, 'Extra-base hit and home-run profile in the run-scoring model.'],
+                          ['Contact', teams[row.game.homeTeam].contact, 'How well the lineup avoids empty at-bats and puts balls in play.'],
+                          ['Discipline', teams[row.game.homeTeam].discipline, 'Walks, zone control, and count leverage.'],
+                        ])}</small>
+                        <small>{ratingDetailLine([
+                          ['Baserunning', teams[row.game.homeTeam].baserunning, 'Run creation added through steals and advancement.'],
+                          ['Defense', teams[row.game.homeTeam].defense, 'Run prevention from fielding quality.'],
+                          ['Bullpen', teams[row.game.homeTeam].bullpen, 'Relief run prevention quality before workload adjustments.'],
+                        ])}</small>
+                      </article>
+                      <article className="mini-card">
+                        <span>Rating Matchup</span>
+                        <strong>{ratingEdgeSummary(row, teams)}</strong>
+                        <small>Starter hand splits feed the offense side of the model.</small>
+                        <small>Home park {teams[row.game.homeTeam].parkFactor} · Away defense {teams[row.game.awayTeam].defense} / Home defense {teams[row.game.homeTeam].defense}</small>
+                      </article>
+                    </div>
+
+                    <div className="metric-grid">
+                      <article className="mini-card">
+                        <span>Pitching Matchup</span>
+                        <strong>{row.awayStarter.name}</strong>
+                        <small>{row.awayStarter.role} · {row.awayStarter.hand} · {row.awayStarter.daysRest} days rest · {row.awayStarter.recentPitchCount} pitches last start</small>
+                        <small>{row.homeStarter.name} · {row.homeStarter.role} · {row.homeStarter.hand} · {row.homeStarter.daysRest} days rest</small>
+                      </article>
+                      <article className="mini-card">
+                        <span>Bullpen Context</span>
+                        <strong>{row.game.awayTeam} {row.awayBullpenWorkload.last3DaysPitchCount} pitches</strong>
+                        <small>{row.game.homeTeam} {row.homeBullpenWorkload.last3DaysPitchCount} pitches</small>
+                        <small>Closers: {row.awayBullpenWorkload.closerAvailable ? 'away ok' : 'away thin'} / {row.homeBullpenWorkload.closerAvailable ? 'home ok' : 'home thin'}</small>
+                      </article>
+                      <article className="mini-card">
+                        <span>Park And Weather</span>
+                        <strong>Park factor {teams[row.game.homeTeam].parkFactor}</strong>
+                        <small>{weatherNote(row, teams)}</small>
+                        <small>Updated {freshnessLabel(row.weatherLastUpdated)}</small>
+                      </article>
+                    </div>
+
+                    <div className="metric-grid">
+                      <article className="mini-card">
+                        <span>Lineups And Availability</span>
+                        <strong>{row.game.awayTeam} {row.awayLineupConfidence} / {row.game.homeTeam} {row.homeLineupConfidence}</strong>
+                        <small>{row.availabilityNotes.map((note) => `${note.team}: ${note.note}`).join(' · ')}</small>
+                        <small>Updated {freshnessLabel(row.lineupLastUpdated)}</small>
+                      </article>
+                      <article className="mini-card">
+                        <span>Recent Form</span>
+                        <strong>{row.recentForm.away.team} {row.recentForm.away.last10Record}</strong>
+                        <small>{row.recentForm.home.team} {row.recentForm.home.last10Record}</small>
+                        <small>{row.recentForm.away.bullpenTrend} / {row.recentForm.home.bullpenTrend}</small>
+                      </article>
+                      <article className="mini-card">
+                        <span>Sharp Information</span>
+                        <strong>{sharpSummary(row)}</strong>
+                        <small>Open ML {formatOpeningMoneyline(row)} · Open total {row.sharpInput?.openingTotal?.toFixed(1) ?? 'N/A'}</small>
+                        <small>Money split {splitLabel(row.sharpInput?.moneylineHomeMoneyPct, row.sharpInput?.moneylineHomeBetsPct)}</small>
+                      </article>
+                    </div>
+
+                    {row.result && analysis ? (
+                      <div className="subsection">
+                        <h3>Model Drivers</h3>
+                        <div className="feature-list">
+                          {row.result.features.map((feature) => (
+                            <div key={feature.label} className="feature-row">
+                              <span>{feature.label}</span>
+                              <strong className={feature.good ? 'feature-good' : 'feature-bad'}>{feature.detail}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="subtle-copy">Run all projections to populate model outputs and composite recommendations for this card.</p>
+                    )}
+                  </div>
+                ) : null}
+              </article>
+            )
+          })}
+        </div>
+      ) : null}
+      </section>
+    </>
+  )
+}
+
+function createIntelligenceRow(awayTeam: TeamAbbr, homeTeam: TeamAbbr, gameTime: string, index: number, odds: OddsInput): ScheduleRow {
+  const awayStarter = getStartersForTeam(awayTeam)[index % 3] ?? getDefaultStarter(awayTeam)
+  const homeStarter = getStartersForTeam(homeTeam)[(index + 1) % 3] ?? getDefaultStarter(homeTeam)
+  const now = new Date(Date.now() - index * 19 * 60_000).toISOString()
+
+  return {
+    game: { awayTeam, homeTeam, gameTime },
+    awayStarter,
+    homeStarter,
+    starterLastUpdated: now,
+    awayBullpenFatigue: index % 2 === 0 ? 'Used' : 'Fresh',
+    homeBullpenFatigue: index % 2 === 0 ? 'Fresh' : 'Used',
+    awayBullpenWorkload: createDefaultBullpenWorkload(index % 2 === 0 ? 'Used' : 'Fresh'),
+    homeBullpenWorkload: createDefaultBullpenWorkload(index % 2 === 0 ? 'Fresh' : 'Used'),
+    awayLineupConfidence: index % 3 === 0 ? 'Projected' : 'Confirmed',
+    homeLineupConfidence: index % 3 === 2 ? 'Thin' : 'Confirmed',
+    lineupLastUpdated: new Date(Date.now() - (index * 14 + 8) * 60_000).toISOString(),
+    temperature: 72 + index * 2,
+    windMph: 6 + index * 2,
+    windDirection: (index % 2 === 0 ? 'Out' : 'Neutral') as WindDirection,
+    weatherLastUpdated: new Date(Date.now() - (index * 11 + 5) * 60_000).toISOString(),
+    availabilityNotes: [
+      { team: awayTeam, note: `${awayTeam} lineup still projecting one platoon spot`, impact: 'medium', lastUpdated: new Date(Date.now() - (index * 13 + 7) * 60_000).toISOString() },
+      { team: homeTeam, note: `${homeTeam} has one bullpen bridge arm on limited availability`, impact: 'low', lastUpdated: new Date(Date.now() - (index * 9 + 6) * 60_000).toISOString() },
+    ],
+    recentForm: {
+      away: {
+        team: awayTeam,
+        last10Record: `${6 - (index % 3)}-${4 + (index % 3)}`,
+        runsScoredPerGame: Number((4.1 + index * 0.15).toFixed(1)),
+        runsAllowedPerGame: Number((4.7 - index * 0.12).toFixed(1)),
+        bullpenTrend: index % 2 === 0 ? 'late innings unstable' : 'bullpen holding leads',
+        lastUpdated: new Date(Date.now() - (index * 22 + 9) * 60_000).toISOString(),
+      },
+      home: {
+        team: homeTeam,
+        last10Record: `${7 + (index % 2)}-${3 - (index % 2)}`,
+        runsScoredPerGame: Number((4.9 + index * 0.2).toFixed(1)),
+        runsAllowedPerGame: Number((3.9 + index * 0.05).toFixed(1)),
+        bullpenTrend: index % 2 === 0 ? 'bullpen settling' : 'closer workload rising',
+        lastUpdated: new Date(Date.now() - (index * 20 + 12) * 60_000).toISOString(),
+      },
+    },
+    sharpInput: {
+      source: 'sample',
+      lastUpdated: new Date(Date.now() - (index * 10 + 3) * 60_000).toISOString(),
+      openingHomeMoneyline: odds.homeMoneyline - 10,
+      openingAwayMoneyline: odds.awayMoneyline + 10,
+      openingTotal: odds.overUnder + (index % 2 === 0 ? 0.5 : -0.5),
+      moneylineHomeBetsPct: 48 + index * 3,
+      moneylineHomeMoneyPct: 54 + index * 2,
+      totalOverBetsPct: 57 - index,
+      totalOverMoneyPct: 52 + index,
+      steamLean: index % 2 === 0 ? 'home' : 'over',
+      reverseLean: index % 2 === 0 ? 'none' : 'under',
+    },
+    compositeRecommendation: null,
+    odds,
+    result: null,
+  }
+}
+
+function defaultOddsForGame(teams: Record<TeamAbbr, TeamStats>, homeTeam: TeamAbbr, awayTeam: TeamAbbr): OddsInput {
+  const homeStrength = teams[homeTeam].offenseVsR + teams[homeTeam].bullpen + teams[homeTeam].defense
+  const awayStrength = teams[awayTeam].offenseVsR + teams[awayTeam].bullpen + teams[awayTeam].defense
+  const diff = homeStrength - awayStrength
+  const homeMoneyline = diff >= 0 ? -Math.max(120, 130 + Math.round(diff * 1.1)) : 110 + Math.round(Math.abs(diff) * 0.8)
+  const awayMoneyline = homeMoneyline < 0 ? 100 + Math.round(Math.abs(homeMoneyline) * 0.85) : -Math.max(120, 130 + Math.round(Math.abs(diff) * 0.7))
+
+  return {
+    source: 'model',
+    homeMoneyline,
+    awayMoneyline,
+    runLine: -1.5,
+    runLineHomeOdds: 135,
+    runLineAwayOdds: -160,
+    overUnder: 8,
+    overOdds: -110,
+    underOdds: -110,
+  }
+}
+
+function csvEscape(value: string) {
+  return `"${String(value).replaceAll('"', '""')}"`
+}
+
+function lookupKey(date: string, home: TeamAbbr, away: TeamAbbr) {
+  return `${date.replaceAll('-', '')}${home}${away}`
+}
+
+function freshnessLabel(timestamp?: string | null) {
+  if (!timestamp) return 'Unknown'
+  const mins = Math.round((Date.now() - new Date(timestamp).getTime()) / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  return `${Math.round(mins / 60)}h ago`
+}
+
+function weatherNote(row: ScheduleRow, teams: Record<TeamAbbr, TeamStats>) {
+  const park = teams[row.game.homeTeam].parkFactor
+  return `${row.temperature}F with ${row.windDirection.toLowerCase()} wind at ${row.windMph} mph · park ${park}`
+}
+
+function headerOddsSummary(odds: OddsInput) {
+  return `ML ${signed(odds.awayMoneyline)}/${signed(odds.homeMoneyline)} · RL ${signed(odds.runLine)} (${signed(odds.runLineAwayOdds)}/${signed(odds.runLineHomeOdds)}) · O/U ${odds.overUnder.toFixed(1)} (${signed(odds.overOdds)}/${signed(odds.underOdds)})`
+}
+
+function displayTeamName(team: TeamAbbr, teams: Record<TeamAbbr, TeamStats>) {
+  const cityLabel: Partial<Record<TeamAbbr, string>> = {
+    NYY: 'NY',
+    NYM: 'NY',
+    SF: 'SF',
+    SD: 'SD',
+    KC: 'KC',
+    TB: 'TB',
+    STL: 'STL',
+    LAA: 'LA',
+    LAD: 'LA',
+    CWS: 'Chi',
+    CHC: 'Chi',
+  }
+
+  return `${cityLabel[team] ?? team} ${teams[team].name}`
+}
+
+function awaySplitRating(row: ScheduleRow, teams: Record<TeamAbbr, TeamStats>) {
+  return row.homeStarter.hand === 'L' ? teams[row.game.awayTeam].offenseVsL : teams[row.game.awayTeam].offenseVsR
+}
+
+function homeSplitRating(row: ScheduleRow, teams: Record<TeamAbbr, TeamStats>) {
+  return row.awayStarter.hand === 'L' ? teams[row.game.homeTeam].offenseVsL : teams[row.game.homeTeam].offenseVsR
+}
+
+function ratingEdgeSummary(row: ScheduleRow, teams: Record<TeamAbbr, TeamStats>) {
+  const awayAttack = awaySplitRating(row, teams)
+  const homeAttack = homeSplitRating(row, teams)
+  const bullpenEdge = teams[row.game.homeTeam].bullpen - teams[row.game.awayTeam].bullpen
+  const attackLeader = homeAttack > awayAttack ? `${row.game.homeTeam} offense edge` : awayAttack > homeAttack ? `${row.game.awayTeam} offense edge` : 'Offense ratings even'
+  const bullpenLeader = bullpenEdge > 0 ? `${row.game.homeTeam} bullpen +${bullpenEdge}` : bullpenEdge < 0 ? `${row.game.awayTeam} bullpen +${Math.abs(bullpenEdge)}` : 'Bullpens even'
+  return `${attackLeader} · ${bullpenLeader}`
+}
+
+function sharpSummary(row: ScheduleRow) {
+  if (!row.sharpInput) return 'No sharp read'
+  return `Steam ${row.sharpInput.steamLean.toUpperCase()} · Reverse ${row.sharpInput.reverseLean.toUpperCase()} · ${freshnessLabel(row.sharpInput.lastUpdated)}`
+}
+
+function formatOpeningMoneyline(row: ScheduleRow) {
+  if (!row.sharpInput?.openingHomeMoneyline || !row.sharpInput?.openingAwayMoneyline) return 'N/A'
+  return `${signed(row.sharpInput.openingAwayMoneyline)} / ${signed(row.sharpInput.openingHomeMoneyline)}`
+}
+
+function splitLabel(moneyPct: number | null | undefined, betsPct: number | null | undefined) {
+  if (moneyPct == null || betsPct == null) return 'N/A'
+  const gap = moneyPct - betsPct
+  return `${moneyPct}% money vs ${betsPct}% bets (${gap > 0 ? '+' : ''}${gap}%)`
+}
+
+function signed(value: number) {
+  return `${value > 0 ? '+' : ''}${value}`
+}
+
+function formatTimestamp(timestamp: string) {
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+function subtractOneDay(date: string) {
+  const value = new Date(`${date}T12:00:00`)
+  value.setDate(value.getDate() - 1)
+  return value.toISOString().slice(0, 10)
+}
+
+function cardFeedFlags(row: ScheduleRow) {
+  const flags: string[] = []
+  if (row.odds.source === 'model') flags.push('Market fallback active')
+  if (!row.weatherLastUpdated) flags.push('Weather fallback active')
+  if (!row.lineupLastUpdated) flags.push('Lineups not posted')
+  else if (row.awayLineupConfidence !== 'Confirmed' || row.homeLineupConfidence !== 'Confirmed') flags.push('Lineups still partial')
+  return flags
+}
+
+function feedHealthSummary(row: ScheduleRow) {
+  return [
+    row.odds.source === 'espn' ? 'live odds attached' : row.odds.source === 'manual' ? 'manual odds loaded' : 'using model default odds',
+    row.weatherLastUpdated ? 'weather feed live' : 'weather using neutral fallback',
+    row.lineupLastUpdated ? 'lineup feed checked' : 'lineup feed still pending',
+  ].join(' · ')
+}
+
+function oddsSourceLabel(source: OddsInput['source']) {
+  if (source === 'espn') return 'ESPN live'
+  if (source === 'manual') return 'Manual'
+  return 'Model default'
+}
+
+function lineupStatusMark(confidence: ScheduleRow['awayLineupConfidence']) {
+  return (
+    <span className={confidence === 'Confirmed' ? 'status-mark-good' : 'status-mark-bad'}>
+      {confidence === 'Confirmed' ? '✓' : 'x'}
+    </span>
+  )
+}
+
+function ratingDetailLine(items: Array<[string, number, string]>) {
+  return (
+    <>
+      {items.map(([label, value, help], index) => (
+        <span key={label} title={help} className="rating-stat" aria-label={`${label}: ${value}. ${help}`}>
+          {index > 0 ? ' · ' : ''}
+          {label} {value}
+        </span>
+      ))}
+    </>
+  )
+}
