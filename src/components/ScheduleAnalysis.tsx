@@ -105,7 +105,7 @@ export function ScheduleAnalysis({
             ...row,
             odds: {
               ...importedOdds,
-              source: 'manual',
+              source: 'manual' as const,
             },
           }
         })

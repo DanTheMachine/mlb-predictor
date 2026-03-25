@@ -627,8 +627,8 @@ function toGradingResultRow(game: LiveGame, fallbackDate: string): GradingResult
     date,
     away,
     home,
-    awayScore,
-    homeScore,
+    awayScore: awayScore as number,
+    homeScore: homeScore as number,
     lookupKey: `${date.replaceAll('-', '')}${home}${away}`,
   }
 }
