@@ -17,6 +17,7 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
   - weather
   - odds
   - composite recommendation
+  - projected score + composite recommendation in the game-card header
   - visible team rating inputs used by the model
 
 ## Current Daily Workflow
@@ -29,6 +30,7 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
    - loads slate games for the selected date
    - loads probable starters and lineup state
    - loads weather
+   - interprets wind direction relative to the home park orientation
    - loads ESPN odds when available
 4. Optionally use `Bulk Edit Lines`
    - pasted odds now override active game odds as `manual`
@@ -53,6 +55,23 @@ Important behavior:
 
 - `Odds live` counts both `espn` and `manual`
 - `Market fallback active` only means the card is still using `model` odds
+- live summary chips stay gray before a live load attempt
+- after a live load:
+  - green means all eligible games updated
+  - yellow means partial update coverage
+  - red means the load failed or coverage is still `0`
+- already-started games do not count against the lineup / odds / weather chip denominators
+
+## Header Summary Behavior
+
+Daily schedule card headers now show:
+
+- `Proj Score: AWAY x.xx - HOME y.yy`
+- `Comp Rec: ...`
+
+When the composite recommendation is a total, the header includes the market and price, for example:
+
+- `Comp Rec: OVER 8.5 -115`
 
 ## Grading / CSV Flow
 

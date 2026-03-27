@@ -19,6 +19,7 @@ The MLB app is no longer a scaffold. It now includes:
 - live MLB team-model refresh
 - daily schedule loading
 - live weather and ESPN odds integration
+- park-relative wind-direction interpretation for weather
 - bulk manual line editing
 - single-game simulator tools
 - prediction export and results export for grading
@@ -44,6 +45,20 @@ The app supports three odds states:
 `Odds live` remains satisfied for both `ESPN live` and `Manual`.
 
 `Market fallback active` means the game is still using `Model default` odds.
+
+Live schedule chip behavior:
+
+- gray before a live slate load attempt
+- green when all eligible games are updated
+- yellow when only some eligible games are updated
+- red when the live load fails or the updated count remains `0`
+- already-started games are excluded from the chip denominator
+
+Game card header behavior:
+
+- projected score now appears in the header as `Proj Score: AWAY x.xx - HOME y.yy`
+- composite recommendation now appears as `Comp Rec: ...`
+- totals can include the market and price, for example `Comp Rec: OVER 8.5 -115`
 
 ## Grading Files
 

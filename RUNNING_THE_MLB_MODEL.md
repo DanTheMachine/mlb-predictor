@@ -45,6 +45,7 @@ Recommended startup order:
    - loads the slate
    - loads lineups
    - loads weather
+   - interprets wind direction relative to the home park orientation
    - loads ESPN odds when available
 4. Optionally use `Bulk Edit Lines`
    - pasted lines become active `Manual` odds
@@ -60,6 +61,9 @@ Recommended startup order:
 - `Results` exports the previous day’s completed MLB results.
 - `Odds live` counts both `ESPN live` and `Manual` odds.
 - `Market fallback active` means the card is still using model-generated default odds.
+- live lineup / odds / weather chips are gray before load, green for full eligible coverage, yellow for partial eligible coverage, and red on failure or zero coverage
+- already-started games are excluded from the live chip denominator
+- the game card header shows `Proj Score: AWAY x.xx - HOME y.yy` and `Comp Rec: ...`
 
 ## Validation Commands
 

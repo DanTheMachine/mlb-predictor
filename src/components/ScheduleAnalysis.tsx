@@ -429,7 +429,6 @@ export function ScheduleAnalysis({
         <div className="schedule-list">
           {enrichedRows.map(({ row, analysis, composite }, idx) => {
             const expanded = expandedIdx === idx
-            const primaryPick = composite?.pick ?? 'PASS'
             const headerCompositeRecommendation = formatHeaderCompositeRecommendation(row, composite)
             const feedFlags = cardFeedFlags(row)
 
