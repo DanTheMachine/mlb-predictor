@@ -92,13 +92,37 @@ describe('mlbApi', () => {
         },
       },
       '2026-03-26T16:10:00Z',
+      'LAD',
     )
 
     expect(snapshot).toEqual({
       temperature: 64,
       windMph: 11,
-      windDirection: 'Out',
+      windDirection: 'Cross',
       summary: 'temperate outdoor conditions',
+    })
+  })
+
+  it('classifies wind relative to the home park orientation instead of a global compass bucket', () => {
+    const snapshot = extractWeatherSnapshot(
+      {
+        hourly: {
+          time: ['2026-03-26T23:00:00'],
+          temperature_2m: [67],
+          wind_speed_10m: [14],
+          wind_direction_10m: [205],
+          weather_code: [0],
+        },
+      },
+      '2026-03-26T23:10:00Z',
+      'LAD',
+    )
+
+    expect(snapshot).toEqual({
+      temperature: 67,
+      windMph: 14,
+      windDirection: 'Out',
+      summary: 'windy conditions around 14 mph',
     })
   })
 

@@ -288,37 +288,37 @@ const TEAM_CODE_MAP: Record<string, TeamAbbr> = {
   WSH: 'WSH',
 }
 
-const STADIUM_COORDS: Record<TeamAbbr, { lat: number; lon: number }> = {
-  ARI: { lat: 33.4455, lon: -112.0667 },
-  ATL: { lat: 33.8907, lon: -84.4677 },
-  BAL: { lat: 39.2838, lon: -76.6217 },
-  BOS: { lat: 42.3467, lon: -71.0972 },
-  CHC: { lat: 41.9484, lon: -87.6553 },
-  CIN: { lat: 39.0979, lon: -84.5081 },
-  CLE: { lat: 41.4962, lon: -81.6852 },
-  COL: { lat: 39.7559, lon: -104.9942 },
-  CWS: { lat: 41.8301, lon: -87.6338 },
-  DET: { lat: 42.339, lon: -83.0485 },
-  HOU: { lat: 29.7573, lon: -95.3555 },
-  KC: { lat: 39.0517, lon: -94.4803 },
-  LAA: { lat: 33.8003, lon: -117.8827 },
-  LAD: { lat: 34.0739, lon: -118.24 },
-  MIA: { lat: 25.7781, lon: -80.2197 },
-  MIL: { lat: 43.028, lon: -87.9712 },
-  MIN: { lat: 44.9817, lon: -93.2776 },
-  NYM: { lat: 40.7571, lon: -73.8458 },
-  NYY: { lat: 40.8296, lon: -73.9262 },
-  OAK: { lat: 37.7516, lon: -122.2005 },
-  PHI: { lat: 39.9061, lon: -75.1665 },
-  PIT: { lat: 40.4469, lon: -80.0057 },
-  SD: { lat: 32.7076, lon: -117.157 },
-  SEA: { lat: 47.5914, lon: -122.3325 },
-  SF: { lat: 37.7786, lon: -122.3893 },
-  STL: { lat: 38.6226, lon: -90.1928 },
-  TB: { lat: 27.7682, lon: -82.6534 },
-  TEX: { lat: 32.7473, lon: -97.0847 },
-  TOR: { lat: 43.6414, lon: -79.3894 },
-  WSH: { lat: 38.873, lon: -77.0074 },
+const STADIUMS: Record<TeamAbbr, { lat: number; lon: number; centerFieldBearing: number }> = {
+  ARI: { lat: 33.4455, lon: -112.0667, centerFieldBearing: 20 },
+  ATL: { lat: 33.8907, lon: -84.4677, centerFieldBearing: 35 },
+  BAL: { lat: 39.2838, lon: -76.6217, centerFieldBearing: 60 },
+  BOS: { lat: 42.3467, lon: -71.0972, centerFieldBearing: 50 },
+  CHC: { lat: 41.9484, lon: -87.6553, centerFieldBearing: 45 },
+  CIN: { lat: 39.0979, lon: -84.5081, centerFieldBearing: 55 },
+  CLE: { lat: 41.4962, lon: -81.6852, centerFieldBearing: 40 },
+  COL: { lat: 39.7559, lon: -104.9942, centerFieldBearing: 20 },
+  CWS: { lat: 41.8301, lon: -87.6338, centerFieldBearing: 25 },
+  DET: { lat: 42.339, lon: -83.0485, centerFieldBearing: 20 },
+  HOU: { lat: 29.7573, lon: -95.3555, centerFieldBearing: 45 },
+  KC: { lat: 39.0517, lon: -94.4803, centerFieldBearing: 35 },
+  LAA: { lat: 33.8003, lon: -117.8827, centerFieldBearing: 25 },
+  LAD: { lat: 34.0739, lon: -118.24, centerFieldBearing: 25 },
+  MIA: { lat: 25.7781, lon: -80.2197, centerFieldBearing: 35 },
+  MIL: { lat: 43.028, lon: -87.9712, centerFieldBearing: 45 },
+  MIN: { lat: 44.9817, lon: -93.2776, centerFieldBearing: 25 },
+  NYM: { lat: 40.7571, lon: -73.8458, centerFieldBearing: 30 },
+  NYY: { lat: 40.8296, lon: -73.9262, centerFieldBearing: 50 },
+  OAK: { lat: 37.7516, lon: -122.2005, centerFieldBearing: 45 },
+  PHI: { lat: 39.9061, lon: -75.1665, centerFieldBearing: 60 },
+  PIT: { lat: 40.4469, lon: -80.0057, centerFieldBearing: 65 },
+  SD: { lat: 32.7076, lon: -117.157, centerFieldBearing: 35 },
+  SEA: { lat: 47.5914, lon: -122.3325, centerFieldBearing: 10 },
+  SF: { lat: 37.7786, lon: -122.3893, centerFieldBearing: 60 },
+  STL: { lat: 38.6226, lon: -90.1928, centerFieldBearing: 40 },
+  TB: { lat: 27.7682, lon: -82.6534, centerFieldBearing: 45 },
+  TEX: { lat: 32.7473, lon: -97.0847, centerFieldBearing: 40 },
+  TOR: { lat: 43.6414, lon: -79.3894, centerFieldBearing: 40 },
+  WSH: { lat: 38.873, lon: -77.0074, centerFieldBearing: 55 },
 }
 
 export function normalizeMlbTeam(team: LiveTeam | undefined): TeamAbbr | null {
@@ -380,19 +380,19 @@ async function fetchTeamStats(group: 'hitting' | 'pitching' | 'fielding', season
 }
 
 async function fetchWeather(homeTeam: TeamAbbr, gameDate: string): Promise<WeatherSnapshot | null> {
-  const coords = STADIUM_COORDS[homeTeam]
-  if (!coords) return null
+  const stadium = STADIUMS[homeTeam]
+  if (!stadium) return null
 
   const date = gameDate.slice(0, 10)
   const response = await fetch(
-    `${PROXY_BASE_URL}/weather?lat=${encodeURIComponent(String(coords.lat))}&lon=${encodeURIComponent(String(coords.lon))}&date=${encodeURIComponent(date)}`,
+    `${PROXY_BASE_URL}/weather?lat=${encodeURIComponent(String(stadium.lat))}&lon=${encodeURIComponent(String(stadium.lon))}&date=${encodeURIComponent(date)}`,
   )
   if (!response.ok) {
     return null
   }
 
   const payload = (await response.json()) as WeatherResponse
-  return extractWeatherSnapshot(payload, gameDate)
+  return extractWeatherSnapshot(payload, gameDate, homeTeam)
 }
 
 async function fetchLineup(gamePk: number): Promise<LineupSnapshot | null> {
@@ -656,7 +656,7 @@ function createRecentFormSummary(team: TeamAbbr, lastUpdated: string): RecentFor
   }
 }
 
-export function extractWeatherSnapshot(payload: WeatherResponse, gameDate: string): WeatherSnapshot | null {
+export function extractWeatherSnapshot(payload: WeatherResponse, gameDate: string, homeTeam?: TeamAbbr): WeatherSnapshot | null {
   const hourly = payload.hourly
   if (!hourly?.time?.length) return null
 
@@ -684,7 +684,7 @@ export function extractWeatherSnapshot(payload: WeatherResponse, gameDate: strin
   return {
     temperature: Math.round(temperature),
     windMph: Math.round(windMph),
-    windDirection: toModelWindDirection(windMph, windDegrees),
+    windDirection: toModelWindDirection(homeTeam, windMph, windDegrees),
     summary: describeWeather(weatherCode, windMph),
   }
 }
@@ -816,13 +816,28 @@ function parseWeatherTime(value: string) {
   return new Date(/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? value : `${value}Z`)
 }
 
-function toModelWindDirection(windMph: number, windDegrees?: number): WindDirection {
+function toModelWindDirection(homeTeam: TeamAbbr | undefined, windMph: number, windDegrees?: number): WindDirection {
   if (windMph < 7) return 'Neutral'
   if (windDegrees == null) return windMph >= 12 ? 'Cross' : 'Neutral'
-  const normalized = ((windDegrees % 360) + 360) % 360
-  if (normalized >= 45 && normalized < 135) return 'Out'
-  if (normalized >= 225 && normalized < 315) return 'In'
+  const stadium = homeTeam ? STADIUMS[homeTeam] : null
+  if (!stadium) return windMph >= 12 ? 'Cross' : 'Neutral'
+
+  const windTowardBearing = normalizeBearing(windDegrees + 180)
+  const outfieldBearing = normalizeBearing(stadium.centerFieldBearing)
+  const relativeToOutfield = smallestAngleBetween(windTowardBearing, outfieldBearing)
+
+  if (relativeToOutfield <= 45) return 'Out'
+  if (relativeToOutfield >= 135) return 'In'
   return 'Cross'
+}
+
+function normalizeBearing(degrees: number) {
+  return ((degrees % 360) + 360) % 360
+}
+
+function smallestAngleBetween(a: number, b: number) {
+  const diff = Math.abs(normalizeBearing(a) - normalizeBearing(b))
+  return diff > 180 ? 360 - diff : diff
 }
 
 function describeWeather(weatherCode?: number, windMph?: number) {

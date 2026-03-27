@@ -47,6 +47,8 @@ export function ScheduleAnalysis({
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
   const [liveDate, setLiveDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [gamesLoading, setGamesLoading] = useState(false)
+  const [liveLoadAttempted, setLiveLoadAttempted] = useState(false)
+  const [liveLoadFailed, setLiveLoadFailed] = useState(false)
   const [lastLiveRefresh, setLastLiveRefresh] = useState<string | null>(null)
   const [bulkEditorOpen, setBulkEditorOpen] = useState(false)
   const [resultsLoading, setResultsLoading] = useState(false)
@@ -62,12 +64,21 @@ export function ScheduleAnalysis({
   )
 
   const liveBoardSummary = useMemo(() => {
+    const upcomingRows = rows.filter((row) => isUpcomingGame(row))
     return {
       totalGames: rows.length,
       teamsUpdated,
       oddsLiveCount: rows.filter((row) => row.odds.source !== 'model').length,
+      oddsEligibleCount: upcomingRows.length,
+      oddsLiveEligibleCount: upcomingRows.filter((row) => row.odds.source !== 'model').length,
       weatherLiveCount: rows.filter((row) => Boolean(row.weatherLastUpdated)).length,
+      weatherEligibleCount: upcomingRows.length,
+      weatherLiveEligibleCount: upcomingRows.filter((row) => Boolean(row.weatherLastUpdated)).length,
       lineupConfirmedCount: rows.filter(
+        (row) => row.awayLineupConfidence === 'Confirmed' && row.homeLineupConfidence === 'Confirmed',
+      ).length,
+      lineupEligibleCount: upcomingRows.length,
+      lineupConfirmedEligibleCount: upcomingRows.filter(
         (row) => row.awayLineupConfidence === 'Confirmed' && row.homeLineupConfidence === 'Confirmed',
       ).length,
       lineupPendingCount: rows.filter(
@@ -83,6 +94,8 @@ export function ScheduleAnalysis({
     setBulkStatus('Sample MLB slate loaded with starter, lineup, weather, bullpen, and sharp-style context.')
     setBulkStatusTone('success')
     setBulkError('')
+    setLiveLoadAttempted(false)
+    setLiveLoadFailed(false)
     setLastLiveRefresh(null)
   }
 
@@ -125,6 +138,8 @@ export function ScheduleAnalysis({
   const loadGames = async () => {
     setGamesLoading(true)
     setBulkError('')
+    setLiveLoadAttempted(true)
+    setLiveLoadFailed(false)
 
     try {
       const slateRows = await fetchLiveScheduleRows(liveDate)
@@ -143,6 +158,7 @@ export function ScheduleAnalysis({
       setBulkError(message)
       setBulkStatus(`Load games failed at ${formatTimestamp(new Date().toISOString())}.`)
       setBulkStatusTone('error')
+      setLiveLoadFailed(true)
     } finally {
       setGamesLoading(false)
     }
@@ -323,25 +339,34 @@ export function ScheduleAnalysis({
             <div className="meta-chip-row daily-status-row">
               <span className={`meta-chip ${liveBoardSummary.teamsUpdated ? 'live-chip' : ''}`}>Teams Updated</span>
               <span
-                className={`meta-chip ${
-                  liveBoardSummary.totalGames > 0 && liveBoardSummary.lineupConfirmedCount === liveBoardSummary.totalGames ? 'live-chip' : ''
-                }`}
+                className={`meta-chip ${feedChipClass({
+                  attempted: liveLoadAttempted,
+                  failed: liveLoadFailed,
+                  eligibleCount: liveBoardSummary.lineupEligibleCount,
+                  updatedCount: liveBoardSummary.lineupConfirmedEligibleCount,
+                })}`}
               >
-                Full lineups {liveBoardSummary.lineupConfirmedCount}/{liveBoardSummary.totalGames}
+                Full lineups {liveBoardSummary.lineupConfirmedEligibleCount}/{liveBoardSummary.lineupEligibleCount}
               </span>
               <span
-                className={`meta-chip ${
-                  liveBoardSummary.totalGames > 0 && liveBoardSummary.oddsLiveCount === liveBoardSummary.totalGames ? 'live-chip' : ''
-                }`}
+                className={`meta-chip ${feedChipClass({
+                  attempted: liveLoadAttempted,
+                  failed: liveLoadFailed,
+                  eligibleCount: liveBoardSummary.oddsEligibleCount,
+                  updatedCount: liveBoardSummary.oddsLiveEligibleCount,
+                })}`}
               >
-                Odds live {liveBoardSummary.oddsLiveCount}/{liveBoardSummary.totalGames}
+                Odds live {liveBoardSummary.oddsLiveEligibleCount}/{liveBoardSummary.oddsEligibleCount}
               </span>
               <span
-                className={`meta-chip ${
-                  liveBoardSummary.totalGames > 0 && liveBoardSummary.weatherLiveCount === liveBoardSummary.totalGames ? 'live-chip' : ''
-                }`}
+                className={`meta-chip ${feedChipClass({
+                  attempted: liveLoadAttempted,
+                  failed: liveLoadFailed,
+                  eligibleCount: liveBoardSummary.weatherEligibleCount,
+                  updatedCount: liveBoardSummary.weatherLiveEligibleCount,
+                })}`}
               >
-                Weather live {liveBoardSummary.weatherLiveCount}/{liveBoardSummary.totalGames}
+                Weather live {liveBoardSummary.weatherLiveEligibleCount}/{liveBoardSummary.weatherEligibleCount}
               </span>
             </div>
           </div>
@@ -405,6 +430,7 @@ export function ScheduleAnalysis({
           {enrichedRows.map(({ row, analysis, composite }, idx) => {
             const expanded = expandedIdx === idx
             const primaryPick = composite?.pick ?? 'PASS'
+            const headerCompositeRecommendation = formatHeaderCompositeRecommendation(row, composite)
             const feedFlags = cardFeedFlags(row)
 
             return (
@@ -414,8 +440,13 @@ export function ScheduleAnalysis({
                     <strong>{`${displayTeamName(row.game.awayTeam, teams)} at ${displayTeamName(row.game.homeTeam, teams)} · ${row.game.gameTime} · ${row.awayStarter.name} vs ${row.homeStarter.name}`}</strong>
                     <span>{headerOddsSummary(row.odds)}</span>
                   </div>
-                  <div>
-                    <strong>{primaryPick}</strong>
+                  <div className="schedule-card-header-summary">
+                    <span className="schedule-card-projected-score">
+                      {row.result
+                        ? `Proj Score: ${row.game.awayTeam} ${row.result.projectedAwayRuns.toFixed(2)} - ${row.game.homeTeam} ${row.result.projectedHomeRuns.toFixed(2)}`
+                        : 'Proj Score: pending'}
+                    </span>
+                    <strong>{`Comp Rec: ${headerCompositeRecommendation}`}</strong>
                     <span>{composite ? `Tier ${composite.tier} · Score ${composite.score.toFixed(1)}` : 'Projection pending'}</span>
                   </div>
                 </button>
@@ -667,6 +698,30 @@ function freshnessLabel(timestamp?: string | null) {
   return `${Math.round(mins / 60)}h ago`
 }
 
+function isUpcomingGame(row: ScheduleRow) {
+  if (!row.game.gameDateIso) return true
+  const firstPitch = new Date(row.game.gameDateIso).getTime()
+  if (Number.isNaN(firstPitch)) return true
+  return firstPitch > Date.now()
+}
+
+function feedChipClass({
+  attempted,
+  failed,
+  eligibleCount,
+  updatedCount,
+}: {
+  attempted: boolean
+  failed: boolean
+  eligibleCount: number
+  updatedCount: number
+}) {
+  if (!attempted) return ''
+  if (failed || updatedCount === 0) return 'error-chip'
+  if (updatedCount === eligibleCount) return 'live-chip'
+  return 'pending-chip'
+}
+
 function weatherNote(row: ScheduleRow, teams: Record<TeamAbbr, TeamStats>) {
   const park = teams[row.game.homeTeam].parkFactor
   return `${row.temperature}F with ${row.windDirection.toLowerCase()} wind at ${row.windMph} mph · park ${park}`
@@ -674,6 +729,28 @@ function weatherNote(row: ScheduleRow, teams: Record<TeamAbbr, TeamStats>) {
 
 function headerOddsSummary(odds: OddsInput) {
   return `ML ${signed(odds.awayMoneyline)}/${signed(odds.homeMoneyline)} · RL ${signed(odds.runLine)} (${signed(odds.runLineAwayOdds)}/${signed(odds.runLineHomeOdds)}) · O/U ${odds.overUnder.toFixed(1)} (${signed(odds.overOdds)}/${signed(odds.underOdds)})`
+}
+
+function formatHeaderCompositeRecommendation(row: ScheduleRow, composite: CompositeRecommendation | null) {
+  if (!composite || composite.pick === 'PASS' || composite.primaryMarket === 'PASS') return 'PASS'
+
+  if (composite.primaryMarket === 'OU') {
+    const price = composite.pick === 'OVER' ? row.odds.overOdds : row.odds.underOdds
+    return `${composite.pick} ${row.odds.overUnder.toFixed(1)} ${signed(price)}`
+  }
+
+  if (composite.primaryMarket === 'RL') {
+    const isHomeSide = composite.pick.includes(row.game.homeTeam)
+    const price = isHomeSide ? row.odds.runLineHomeOdds : row.odds.runLineAwayOdds
+    return `${composite.pick} ${signed(price)}`
+  }
+
+  if (composite.primaryMarket === 'ML') {
+    const price = composite.pick.startsWith('HOME') ? row.odds.homeMoneyline : row.odds.awayMoneyline
+    return `${composite.pick} ${signed(price)}`
+  }
+
+  return composite.pick
 }
 
 function displayTeamName(team: TeamAbbr, teams: Record<TeamAbbr, TeamStats>) {
@@ -788,3 +865,4 @@ function ratingDetailLine(items: Array<[string, number, string]>) {
     </>
   )
 }
+

@@ -649,6 +649,16 @@ body {
   font-size: 0.86rem;
 }
 
+.schedule-card-header-summary {
+  justify-items: end;
+}
+
+.schedule-card-header .schedule-card-projected-score {
+  color: var(--text);
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
 .schedule-card-body {
   margin-top: 16px;
 }
@@ -855,3 +865,4 @@ body {
     margin-left: 0;
   }
 }
+
