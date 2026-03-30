@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { extractLineupSnapshot, extractWeatherSnapshot, fetchLiveScheduleRows, normalizeMlbTeam, parseOddsFromEspnEvent, resolveLiveStarter } from './mlbApi'
+import { extractLineupSnapshot, extractWeatherSnapshot, fetchCompletedGameResults, fetchLiveScheduleRows, normalizeMlbTeam, parseOddsFromEspnEvent, resolveLiveStarter } from './mlbApi'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('mlbApi', () => {
   it('normalizes MLB live team objects into local abbreviations', () => {
@@ -193,5 +197,50 @@ describe('mlbApi', () => {
         underOdds: -112,
       },
     })
+  })
+
+  it('uses officialDate for completed-game exports when late games cross midnight UTC', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        dates: [
+          {
+            games: [
+              {
+                gameDate: '2026-03-29T03:10:00Z',
+                officialDate: '2026-03-28',
+                status: {
+                  abstractGameState: 'Final',
+                  detailedState: 'Final',
+                },
+                teams: {
+                  away: {
+                    team: { id: 109, abbreviation: 'ARI' },
+                    score: 2,
+                  },
+                  home: {
+                    team: { id: 119, abbreviation: 'LAD' },
+                    score: 3,
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    } as Response)
+
+    const results = await fetchCompletedGameResults('2026-03-28')
+
+    expect(results).toEqual([
+      {
+        date: '2026-03-28',
+        away: 'ARI',
+        home: 'LAD',
+        awayScore: 2,
+        homeScore: 3,
+        lookupKey: '20260328LADARI',
+      },
+    ])
   })
 })

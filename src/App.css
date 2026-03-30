@@ -778,8 +778,38 @@ body {
   color: var(--text-muted);
 }
 
+.market-edge-line {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.market-edge-line .market-edge-pass,
+.mini-card strong.market-edge-pass {
+  color: var(--danger-text);
+}
+
+.market-edge-line .market-edge-c,
+.mini-card strong.market-edge-c {
+  color: var(--accent);
+}
+
+.market-edge-line .market-edge-b,
+.mini-card strong.market-edge-b {
+  color: var(--warning-text);
+}
+
+.market-edge-line .market-edge-a,
+.mini-card strong.market-edge-a {
+  color: var(--success-text);
+}
+
 .metric-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.metric-grid-ratings {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .feature-list {

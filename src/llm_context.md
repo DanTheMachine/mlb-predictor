@@ -11,13 +11,14 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
   - daily schedule workflow
   - bulk line editing
   - single-game tools in a collapsible panel
+- built-in blended default team ratings
 - daily schedule cards support:
   - probable starters
   - lineups
   - weather
   - odds
-  - composite recommendation
-  - projected score + composite recommendation in the game-card header
+  - three market-specific composite recommendation cards (`ML`, `O/U`, `RL`)
+  - projected score + best composite recommendation in the game-card header
   - visible team rating inputs used by the model
 
 ## Current Daily Workflow
@@ -25,6 +26,8 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
 1. Set `Live Slate Date`
 2. Click `Fetch MLB Data`
    - refreshes team-level model ratings from MLB team stats
+   - requests current-season MLB team hitting / pitching / fielding plus split hitting stats
+   - falls back one season only if current-season data is too incomplete
    - updates the `Teams Updated` chip
 3. Click `Load Games`
    - loads slate games for the selected date
@@ -67,11 +70,26 @@ Important behavior:
 Daily schedule card headers now show:
 
 - `Proj Score: AWAY x.xx - HOME y.yy`
-- `Comp Rec: ...`
+- `Comp Rec: ...` using the strongest active composite market
 
 When the composite recommendation is a total, the header includes the market and price, for example:
 
 - `Comp Rec: OVER 8.5 -115`
+
+## Composite Recommendation Cards
+
+After `Run All Sims`, each expanded daily schedule card now shows:
+
+- `Composite ML Recommendation`
+- `Composite O/U Recommendation`
+- `Composite RL Recommendation`
+
+Important behavior:
+
+- each market gets its own tier, score, pick, and reasons
+- displayed composite scores are on a `0-10` scale
+- `PASS` / `C` / `B` / `A` color-coding is used for market edge percentages and recommendation text
+- total-card reasons should explain total-related drivers such as projected total vs market total, weather, and run environment
 
 ## Grading / CSV Flow
 
@@ -80,16 +98,24 @@ When the composite recommendation is a total, the header includes the market and
 - recommendations for ML / RL / total
 - edge percentages
 - all market odds needed for ROI later
+- `Away` and `Home` export as `ABBR TeamName` so spreadsheet formulas can safely derive team abbreviations
 - `LookupKey` as the last column
 
 `Results` export includes:
 
 - `Date`
-- `Away`
 - `Home`
-- `AwayScore`
 - `HomeScore`
+- `Away`
+- `AwayScore`
+- `Winner`
+- `Total`
 - `LookupKey`
+
+Important behavior:
+
+- result rows use MLB `officialDate` for `Date` and `LookupKey`, not the UTC `gameDate`
+- this avoids late West Coast games rolling into the next calendar day in exports
 
 These are consumed by `src/lib/modelEvaluation.ts`.
 

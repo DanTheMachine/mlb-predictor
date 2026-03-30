@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 
 import { analyzeBetting } from '../lib/betting'
 import { parseBulkOdds } from '../lib/bulkOddsParser'
-import { buildCompositeRecommendation } from '../lib/compositeRecommendation'
+import { buildCompositeRecommendation, buildCompositeRecommendations } from '../lib/compositeRecommendation'
 import { fetchCompletedGameResults, fetchLiveScheduleRows } from '../lib/mlbApi'
 import {
   createDefaultBullpenWorkload,
@@ -58,7 +58,8 @@ export function ScheduleAnalysis({
       rows.map((row) => {
         const analysis = row.result ? analyzeBetting(row.result, row.odds) : null
         const composite = row.result ? buildCompositeRecommendation(row, analysis) : null
-        return { row: { ...row, compositeRecommendation: composite }, analysis, composite }
+        const compositeSet = row.result ? buildCompositeRecommendations(row, analysis) : null
+        return { row: { ...row, compositeRecommendation: composite }, analysis, composite, compositeSet }
       }),
     [rows],
   )
@@ -86,6 +87,8 @@ export function ScheduleAnalysis({
       ).length,
     }
   }, [rows, teamsUpdated])
+
+  const hasManualOdds = useMemo(() => rows.some((row) => row.odds.source === 'manual'), [rows])
 
   const loadSampleSlate = () => {
     setRows(
@@ -238,8 +241,8 @@ export function ScheduleAnalysis({
         [
           exportDate,
           row.game.gameTime,
-          row.game.awayTeam,
-          row.game.homeTeam,
+          exportTeamLabel(row.game.awayTeam, teams),
+          exportTeamLabel(row.game.homeTeam, teams),
           row.awayStarter.name,
           row.homeStarter.name,
           row.result?.projectedAwayRuns.toFixed(2) ?? '',
@@ -294,9 +297,20 @@ export function ScheduleAnalysis({
     try {
       const resultsDate = subtractOneDay(liveDate)
       const results = await fetchCompletedGameResults(resultsDate)
-      const header = ['Date', 'Away', 'Home', 'AwayScore', 'HomeScore', 'LookupKey']
+      const header = ['Date', 'Home', 'Away', 'Home Score', 'Away Score', 'Winner', 'Total', 'LookupKey']
       const lines = results.map((row) =>
-        [row.date, row.away, row.home, String(row.awayScore), String(row.homeScore), row.lookupKey].map(csvEscape).join(','),
+        [
+          row.date,
+          row.home,
+          row.away,
+          String(row.homeScore),
+          String(row.awayScore),
+          row.homeScore > row.awayScore ? row.home : row.away,
+          String(row.homeScore + row.awayScore),
+          row.lookupKey,
+        ]
+          .map(csvEscape)
+          .join(','),
       )
       const csv = [header.map(csvEscape).join(','), ...lines].join('\n')
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -383,7 +397,10 @@ export function ScheduleAnalysis({
           <button className="secondary-button toolbar-button" onClick={loadSampleSlate}>
             Load Sample Slate
           </button>
-          <button className="secondary-button toolbar-button" onClick={() => setBulkEditorOpen((prev) => !prev)}>
+          <button
+            className={`secondary-button toolbar-button ${hasManualOdds ? 'secondary-button-success' : ''}`}
+            onClick={() => setBulkEditorOpen((prev) => !prev)}
+          >
             {bulkEditorOpen ? 'Hide Bulk Edit Lines' : 'Bulk Edit Lines'}
           </button>
           <button className="secondary-button toolbar-button" onClick={runAllProjections} disabled={!rows.length}>
@@ -427,7 +444,7 @@ export function ScheduleAnalysis({
 
       {enrichedRows.length ? (
         <div className="schedule-list">
-          {enrichedRows.map(({ row, analysis, composite }, idx) => {
+          {enrichedRows.map(({ row, analysis, composite, compositeSet }, idx) => {
             const expanded = expandedIdx === idx
             const headerCompositeRecommendation = formatHeaderCompositeRecommendation(row, composite)
             const feedFlags = cardFeedFlags(row)
@@ -471,42 +488,43 @@ export function ScheduleAnalysis({
 
                 {expanded ? (
                   <div className="schedule-card-body">
-                    {composite ? (
+                    {compositeSet ? (
                       <div className="metric-grid">
                         <article className="mini-card">
-                          <span>Composite Recommendation</span>
-                          <strong>{composite.pick}</strong>
-                          <small>Tier {composite.tier} · Score {composite.score.toFixed(1)}</small>
-                          <small>{composite.reasons.join(' · ')}</small>
+                          <span>Composite ML Recommendation</span>
+                          <strong className={compositeTierClass(compositeSet.ML)}>{formatCompositeCardPick(row, compositeSet.ML)}</strong>
+                          <small>{formatCompositeTierScore(compositeSet.ML)}</small>
+                          <small>{compositeSet.ML.reasons.join(' · ')}</small>
                         </article>
                         <article className="mini-card">
-                          <span>Model And Market</span>
-                          <strong>{row.result ? `${row.result.projectedAwayRuns.toFixed(2)} to ${row.result.projectedHomeRuns.toFixed(2)}` : 'Run all projections'}</strong>
-                          <small>ML {analysis?.mlValuePct.toFixed(1) ?? '0.0'}% · RL {analysis?.runLineEdge.toFixed(1) ?? '0.0'}% · OU {analysis?.ouEdgePct.toFixed(1) ?? '0.0'}%</small>
+                          <span>Composite O/U Recommendation</span>
+                          <strong className={compositeTierClass(compositeSet.OU)}>{formatCompositeCardPick(row, compositeSet.OU)}</strong>
+                          <small>{formatCompositeTierScore(compositeSet.OU)}</small>
+                          <small>{compositeSet.OU.reasons.join(' · ')}</small>
                         </article>
                         <article className="mini-card">
-                          <span>Freshness</span>
-                          <strong>Lineups {freshnessLabel(row.lineupLastUpdated)}</strong>
-                          <small>Weather {freshnessLabel(row.weatherLastUpdated)} · Sharp {freshnessLabel(row.sharpInput?.lastUpdated)}</small>
-                          <small>{feedHealthSummary(row)}</small>
+                          <span>Composite RL Recommendation</span>
+                          <strong className={compositeTierClass(compositeSet.RL)}>{formatCompositeCardPick(row, compositeSet.RL)}</strong>
+                          <small>{formatCompositeTierScore(compositeSet.RL)}</small>
+                          <small>{compositeSet.RL.reasons.join(' · ')}</small>
                         </article>
                       </div>
                     ) : null}
 
                     <div className="metric-grid">
                       <article className="mini-card">
-                        <span>Away Team Ratings</span>
-                        <strong>{row.game.awayTeam} split {awaySplitRating(row, teams)}</strong>
-                        <small>{ratingDetailLine([
-                          ['Power', teams[row.game.awayTeam].power, 'Extra-base hit and home-run profile in the run-scoring model.'],
-                          ['Contact', teams[row.game.awayTeam].contact, 'How well the lineup avoids empty at-bats and puts balls in play.'],
-                          ['Discipline', teams[row.game.awayTeam].discipline, 'Walks, zone control, and count leverage.'],
-                        ])}</small>
-                        <small>{ratingDetailLine([
-                          ['Baserunning', teams[row.game.awayTeam].baserunning, 'Run creation added through steals and advancement.'],
-                          ['Defense', teams[row.game.awayTeam].defense, 'Run prevention from fielding quality.'],
-                          ['Bullpen', teams[row.game.awayTeam].bullpen, 'Relief run prevention quality before workload adjustments.'],
-                        ])}</small>
+                        <span>Model And Market</span>
+                        <strong>
+                          {row.result
+                            ? `${row.game.awayTeam} ${row.result.projectedAwayRuns.toFixed(2)} to ${row.game.homeTeam} ${row.result.projectedHomeRuns.toFixed(2)}`
+                            : 'Run all projections'}
+                        </strong>
+                        <small className="market-edge-line">
+                          <span className={compositeSet ? compositeTierClass(compositeSet.ML) : ''}>ML {analysis?.mlValuePct.toFixed(1) ?? '0.0'}%</span>
+                          <span className={compositeSet ? compositeTierClass(compositeSet.RL) : ''}>RL {analysis?.runLineEdge.toFixed(1) ?? '0.0'}%</span>
+                          <span className={compositeSet ? compositeTierClass(compositeSet.OU) : ''}>OU {analysis?.ouEdgePct.toFixed(1) ?? '0.0'}%</span>
+                        </small>
+                        <small>{feedHealthSummary(row)}</small>
                       </article>
                       <article className="mini-card">
                         <span>Home Team Ratings</span>
@@ -520,6 +538,20 @@ export function ScheduleAnalysis({
                           ['Baserunning', teams[row.game.homeTeam].baserunning, 'Run creation added through steals and advancement.'],
                           ['Defense', teams[row.game.homeTeam].defense, 'Run prevention from fielding quality.'],
                           ['Bullpen', teams[row.game.homeTeam].bullpen, 'Relief run prevention quality before workload adjustments.'],
+                        ])}</small>
+                      </article>
+                      <article className="mini-card">
+                        <span>Away Team Ratings</span>
+                        <strong>{row.game.awayTeam} split {awaySplitRating(row, teams)}</strong>
+                        <small>{ratingDetailLine([
+                          ['Power', teams[row.game.awayTeam].power, 'Extra-base hit and home-run profile in the run-scoring model.'],
+                          ['Contact', teams[row.game.awayTeam].contact, 'How well the lineup avoids empty at-bats and puts balls in play.'],
+                          ['Discipline', teams[row.game.awayTeam].discipline, 'Walks, zone control, and count leverage.'],
+                        ])}</small>
+                        <small>{ratingDetailLine([
+                          ['Baserunning', teams[row.game.awayTeam].baserunning, 'Run creation added through steals and advancement.'],
+                          ['Defense', teams[row.game.awayTeam].defense, 'Run prevention from fielding quality.'],
+                          ['Bullpen', teams[row.game.awayTeam].bullpen, 'Relief run prevention quality before workload adjustments.'],
                         ])}</small>
                       </article>
                       <article className="mini-card">
@@ -752,6 +784,40 @@ function formatHeaderCompositeRecommendation(row: ScheduleRow, composite: Compos
   return composite.pick
 }
 
+function formatCompositeCardPick(row: ScheduleRow, composite: CompositeRecommendation) {
+  if (composite.pass || composite.pick === 'PASS' || composite.primaryMarket === 'PASS') return 'PASS'
+
+  if (composite.primaryMarket === 'OU') {
+    const price = composite.pick === 'OVER' ? row.odds.overOdds : row.odds.underOdds
+    return `${composite.pick} ${row.odds.overUnder.toFixed(1)} ${signed(price)}`
+  }
+
+  if (composite.primaryMarket === 'RL') {
+    const isHomeSide = composite.pick.includes('HOME')
+    const sidePrice = isHomeSide ? row.odds.runLineHomeOdds : row.odds.runLineAwayOdds
+    return `${composite.pick} ${signed(sidePrice)}`
+  }
+
+  if (composite.primaryMarket === 'ML') {
+    const isHomeSide = composite.pick.startsWith('HOME')
+    const moneyline = isHomeSide ? row.odds.homeMoneyline : row.odds.awayMoneyline
+    return `${composite.pick} ${signed(moneyline)}`
+  }
+
+  return composite.pick
+}
+
+function formatCompositeTierScore(composite: CompositeRecommendation) {
+  return composite.pass ? 'Tier PASS · Score 0.0/10' : `Tier ${composite.tier} · Score ${composite.score.toFixed(1)}/10`
+}
+
+function compositeTierClass(composite: CompositeRecommendation) {
+  if (composite.pass || composite.tier === 'PASS') return 'market-edge-pass'
+  if (composite.tier === 'C') return 'market-edge-c'
+  if (composite.tier === 'B') return 'market-edge-b'
+  return 'market-edge-a'
+}
+
 function displayTeamName(team: TeamAbbr, teams: Record<TeamAbbr, TeamStats>) {
   const cityLabel: Partial<Record<TeamAbbr, string>> = {
     NYY: 'NY',
@@ -768,6 +834,10 @@ function displayTeamName(team: TeamAbbr, teams: Record<TeamAbbr, TeamStats>) {
   }
 
   return `${cityLabel[team] ?? team} ${teams[team].name}`
+}
+
+function exportTeamLabel(team: TeamAbbr, teams: Record<TeamAbbr, TeamStats>) {
+  return `${team} ${teams[team].name}`
 }
 
 function awaySplitRating(row: ScheduleRow, teams: Record<TeamAbbr, TeamStats>) {

@@ -45,6 +45,7 @@ type LivePitcher = {
 type LiveGame = {
   gamePk?: number
   gameDate?: string
+  officialDate?: string
   status?: {
     detailedState?: string
     abstractGameState?: string
@@ -621,7 +622,7 @@ function toGradingResultRow(game: LiveGame, fallbackDate: string): GradingResult
     return null
   }
 
-  const date = game.gameDate?.slice(0, 10) ?? fallbackDate
+  const date = game.officialDate ?? fallbackDate
 
   return {
     date,

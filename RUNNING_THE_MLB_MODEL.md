@@ -41,6 +41,8 @@ Recommended startup order:
 1. Set `Live Slate Date`
 2. Click `Fetch MLB Data`
    - refreshes team-level ratings used by the model
+   - pulls MLB hitting / pitching / fielding plus split hitting team stats
+   - uses current-season data first and only falls back a season if current-season coverage is too thin
 3. Click `Load Games`
    - loads the slate
    - loads lineups
@@ -58,12 +60,17 @@ Recommended startup order:
 - `Load Sample Slate` does not require the proxy.
 - `Bulk Edit Lines` does not require the proxy.
 - `Fetch MLB Data` and `Load Games` do require the proxy.
-- `Results` exports the previous day’s completed MLB results.
+- built-in baseline team ratings are currently a blend of prior defaults and live 2026-derived team ratings.
+- `Results` exports the previous day’s completed MLB results using MLB `officialDate` for `Date` and `LookupKey`.
+- `Results` CSV column order is `Date, Home, Away, Home Score, Away Score, Winner, Total, LookupKey`.
+- `Predictions` exports `Away` and `Home` as `ABBR TeamName`.
 - `Odds live` counts both `ESPN live` and `Manual` odds.
 - `Market fallback active` means the card is still using model-generated default odds.
 - live lineup / odds / weather chips are gray before load, green for full eligible coverage, yellow for partial eligible coverage, and red on failure or zero coverage
 - already-started games are excluded from the live chip denominator
-- the game card header shows `Proj Score: AWAY x.xx - HOME y.yy` and `Comp Rec: ...`
+- the expanded daily card shows separate `Composite ML`, `Composite O/U`, and `Composite RL` recommendation cards.
+- composite scores are displayed on a 10-point scale.
+- the game card header shows `Proj Score: AWAY x.xx - HOME y.yy` and the strongest `Comp Rec: ...`
 
 ## Validation Commands
 
