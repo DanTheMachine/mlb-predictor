@@ -543,6 +543,8 @@ body {
 }
 
 .toolbar-button {
+  width: auto;
+  margin-top: 0;
   min-height: 35px;
   padding: 7px 9px;
   border-radius: 9px;

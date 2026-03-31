@@ -52,6 +52,7 @@ export function ScheduleAnalysis({
   const [lastLiveRefresh, setLastLiveRefresh] = useState<string | null>(null)
   const [bulkEditorOpen, setBulkEditorOpen] = useState(false)
   const [resultsLoading, setResultsLoading] = useState(false)
+  const [hasRunAllSims, setHasRunAllSims] = useState(false)
 
   const enrichedRows = useMemo(
     () =>
@@ -94,6 +95,7 @@ export function ScheduleAnalysis({
     setRows(
       SAMPLE_SLATE.map((game, index) => createIntelligenceRow(game.awayTeam, game.homeTeam, game.gameTime, index, defaultOddsForGame(teams, game.homeTeam, game.awayTeam))),
     )
+    setHasRunAllSims(false)
     setBulkStatus('Sample MLB slate loaded with starter, lineup, weather, bullpen, and sharp-style context.')
     setBulkStatusTone('success')
     setBulkError('')
@@ -128,6 +130,7 @@ export function ScheduleAnalysis({
 
         return updated
       })
+      setHasRunAllSims(false)
       setBulkStatus(`Lines updated successfully at ${formatTimestamp(new Date().toISOString())}. Games Updated: ${games.length}`)
       setBulkStatusTone('success')
       setBulkError('')
@@ -147,6 +150,7 @@ export function ScheduleAnalysis({
     try {
       const slateRows = await fetchLiveScheduleRows(liveDate)
       setRows(slateRows)
+      setHasRunAllSims(false)
       setExpandedIdx(null)
       const fetchedAt = new Date().toISOString()
       setLastLiveRefresh(fetchedAt)
@@ -190,6 +194,7 @@ export function ScheduleAnalysis({
         return { ...row, result, compositeRecommendation: buildCompositeRecommendation({ ...row, result }, analysis) }
       }),
     )
+    setHasRunAllSims(true)
     setBulkStatus('Ran projections for the current slate and refreshed composite recommendations.')
     setBulkStatusTone('success')
   }
@@ -403,14 +408,18 @@ export function ScheduleAnalysis({
           >
             {bulkEditorOpen ? 'Hide Bulk Edit Lines' : 'Bulk Edit Lines'}
           </button>
-          <button className="secondary-button toolbar-button" onClick={runAllProjections} disabled={!rows.length}>
+          <button
+            className={`secondary-button toolbar-button ${hasRunAllSims ? 'secondary-button-success' : ''}`}
+            onClick={runAllProjections}
+            disabled={!rows.length}
+          >
             Run All Sims
           </button>
-          <button className="secondary-button toolbar-button" onClick={exportPredictionsCsv} disabled={!enrichedRows.some((entry) => entry.row.result)}>
-            Predictions
+          <button className="primary-button toolbar-button" onClick={exportPredictionsCsv} disabled={!enrichedRows.some((entry) => entry.row.result)}>
+            Predictions CSV
           </button>
-          <button className="secondary-button toolbar-button" onClick={() => void exportResultsCsv()} disabled={resultsLoading}>
-            {resultsLoading ? 'Loading Results...' : 'Results'}
+          <button className="primary-button toolbar-button" onClick={() => void exportResultsCsv()} disabled={resultsLoading}>
+            {resultsLoading ? 'Loading Results...' : 'Results CSV'}
           </button>
         </div>
 

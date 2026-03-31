@@ -41,8 +41,8 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
    - manual odds count as valid market odds
    - this should not reset lineup/weather state
 5. Click `Run All Sims`
-6. Export `Predictions`
-7. Export `Results`
+6. Export `Predictions CSV`
+7. Export `Results CSV`
 
 ## Results Tracker Workflow
 
