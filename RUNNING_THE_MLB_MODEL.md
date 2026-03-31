@@ -55,15 +55,31 @@ Recommended startup order:
 6. Export `Predictions`
 7. Export `Results`
 
+## Results Tracker Workflow
+
+1. Open the `Results Tracker` tab
+2. Paste exported `Predictions CSV`
+3. Paste `Results CSV` or click `Download Yesterday's Results`
+4. Import each file from its own side-by-side editor
+5. Review the market summaries and graded game log
+
+## Model Eval Workflow
+
+- `Model Eval` is separate from `Results Tracker`
+- Use it for threshold tuning, edge-bucket diagnostics, and evaluator reporting
+- It still accepts pasted predictions and results CSV data, but it no longer powers the tracker tab
+
 ## Notes
 
 - `Load Sample Slate` does not require the proxy.
 - `Bulk Edit Lines` does not require the proxy.
 - `Fetch MLB Data` and `Load Games` do require the proxy.
 - built-in baseline team ratings are currently a blend of prior defaults and live 2026-derived team ratings.
-- `Results` exports the previous day’s completed MLB results using MLB `officialDate` for `Date` and `LookupKey`.
+- `Results` exports the previous day's completed MLB results using MLB `officialDate` for `Date` and `LookupKey`.
 - `Results` CSV column order is `Date, Home, Away, Home Score, Away Score, Winner, Total, LookupKey`.
 - `Predictions` exports `Away` and `Home` as `ABBR TeamName`.
+- `Results Tracker` now has its own import flow and no longer depends on `Model Eval`.
+- `Results Tracker` keeps `Predictions CSV` and `Results CSV` editors visible side by side.
 - `Odds live` counts both `ESPN live` and `Manual` odds.
 - `Market fallback active` means the card is still using model-generated default odds.
 - live lineup / odds / weather chips are gray before load, green for full eligible coverage, yellow for partial eligible coverage, and red on failure or zero coverage

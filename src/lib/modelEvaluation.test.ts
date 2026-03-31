@@ -44,4 +44,22 @@ describe('modelEvaluation', () => {
 
     expect(report.rows).toHaveLength(0)
   })
+
+  it('accepts exported results csv headers with spaces', () => {
+    const resultsCsv = `"Date","Home","Away","Home Score","Away Score","LookupKey"
+"2026-03-25","LAD","ATL","6","3","20260325LADATL"`
+
+    const rows = parseResultsCsv(resultsCsv)
+
+    expect(rows).toEqual([
+      {
+        date: '2026-03-25',
+        away: 'ATL',
+        home: 'LAD',
+        awayScore: 3,
+        homeScore: 6,
+        lookupKey: '20260325LADATL',
+      },
+    ])
+  })
 })

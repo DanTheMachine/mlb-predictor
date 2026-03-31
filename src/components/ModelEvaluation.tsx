@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import type { Dispatch, SetStateAction } from 'react'
 
 import {
   DEFAULT_THRESHOLDS,
@@ -11,17 +10,15 @@ import {
   type EvaluationReport,
 } from '../lib/modelEvaluation'
 
-type ModelEvaluationProps = {
-  onReportChange: Dispatch<SetStateAction<EvaluationReport | null>>
+type SummaryCardProps = {
+  label: string
+  summary: EvaluationReport['moneyline']
 }
 
 function SummaryCard({
   label,
   summary,
-}: {
-  label: string
-  summary: EvaluationReport['moneyline']
-}) {
+}: SummaryCardProps) {
   return (
     <article className="mini-card">
       <span>{label}</span>
@@ -59,7 +56,7 @@ function BucketCard({ label, bucket }: { label: string; bucket: EdgeBucketSummar
   )
 }
 
-export function ModelEvaluation({ onReportChange }: ModelEvaluationProps) {
+export function ModelEvaluation() {
   const [predictionsPaste, setPredictionsPaste] = useState('')
   const [resultsPaste, setResultsPaste] = useState('')
   const [status, setStatus] = useState('')
@@ -76,7 +73,6 @@ export function ModelEvaluation({ onReportChange }: ModelEvaluationProps) {
       const results = parseResultsCsv(resultsPaste)
       const nextReport = evaluatePredictions(predictions, results, thresholds)
       setReport(nextReport)
-      onReportChange(nextReport)
       setStatus(
         `Evaluated ${nextReport.rows.length} MLB bets using thresholds ML ${thresholds.moneylineEdgePct.toFixed(1)}%, RL ${thresholds.runLineEdgePct.toFixed(1)}%, OU ${thresholds.totalEdgePct.toFixed(1)}%.`,
       )
@@ -84,7 +80,6 @@ export function ModelEvaluation({ onReportChange }: ModelEvaluationProps) {
       const message = evaluationError instanceof Error ? evaluationError.message : 'Unable to evaluate CSV data.'
       setError(message)
       setReport(null)
-      onReportChange(null)
     }
   }
 
@@ -166,7 +161,6 @@ export function ModelEvaluation({ onReportChange }: ModelEvaluationProps) {
             setError('')
             setReport(null)
             setThresholds(DEFAULT_THRESHOLDS)
-            onReportChange(null)
           }}
         >
           Clear

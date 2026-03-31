@@ -6,6 +6,7 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
 
 - React + TypeScript + Vite app is live
 - tabs exist for `Predictor`, `Results Tracker`, and `Model Eval`
+- `Results Tracker` and `Model Eval` are now independent workflows
 - Predictor tab contains:
   - MLB model data refresh
   - daily schedule workflow
@@ -42,6 +43,27 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
 5. Click `Run All Sims`
 6. Export `Predictions`
 7. Export `Results`
+
+## Results Tracker Workflow
+
+- The `Results Tracker` tab now mirrors the NBA-style import flow rather than depending on `Model Eval`
+- It owns its own state through `src/hooks/useResultsTracker.ts`
+- It supports:
+  - pasting exported predictions CSV
+  - pasting results CSV
+  - downloading yesterday's MLB results directly from the tracker
+  - independent grading summaries for `ML`, `RL`, and `O/U`
+  - a running graded game log
+- The tracker UI now keeps two visible side-by-side textareas:
+  - `Predictions CSV`
+  - `Results CSV`
+- Summary cards show pushes inline as `W-L-P`
+
+## Model Eval Workflow
+
+- `Model Eval` remains a separate calibration / threshold-tuning screen
+- It no longer feeds state into `Results Tracker`
+- It still consumes the same exported predictions + results CSV data through `src/lib/modelEvaluation.ts`
 
 ## Odds Sources
 
@@ -117,19 +139,26 @@ Important behavior:
 - result rows use MLB `officialDate` for `Date` and `LookupKey`, not the UTC `gameDate`
 - this avoids late West Coast games rolling into the next calendar day in exports
 
-These are consumed by `src/lib/modelEvaluation.ts`.
+These are consumed by both:
+
+- `src/lib/modelEvaluation.ts`
+- `src/lib/resultsTracker.ts`
 
 ## Key Files
 
+- `src/components/ResultsTracker.tsx`
+- `src/components/ModelEvaluation.tsx`
 - `src/components/ScheduleAnalysis.tsx`
 - `src/components/SingleGameControls.tsx`
 - `src/components/SingleGameResults.tsx`
 - `src/hooks/useMlbModelData.ts`
 - `src/hooks/usePredictorState.ts`
+- `src/hooks/useResultsTracker.ts`
 - `src/lib/mlbApi.ts`
 - `src/lib/teamRatings.ts`
 - `src/lib/mlbModel.ts`
 - `src/lib/modelEvaluation.ts`
+- `src/lib/resultsTracker.ts`
 - `proxy.ts`
 - `.github/workflows/ci.yml`
 
@@ -144,3 +173,7 @@ Current workflow coverage:
 - unit tests
 - build
 - Playwright e2e
+- focused Results Tracker coverage now exists for:
+  - `src/hooks/useResultsTracker.test.ts`
+  - `src/components/ResultsTracker.test.tsx`
+  - parser compatibility in `src/lib/modelEvaluation.test.ts`

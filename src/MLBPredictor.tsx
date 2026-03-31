@@ -79,13 +79,13 @@ export function MLBPredictor() {
 
       {activeTab === 'results' ? (
         <section className="grid">
-          <ResultsTracker summary={resultsTracker.summary} />
+          <ResultsTracker {...resultsTracker} />
         </section>
       ) : null}
 
       {activeTab === 'evaluation' ? (
         <section className="grid">
-          <ModelEvaluation onReportChange={resultsTracker.setReport} />
+          <ModelEvaluation />
         </section>
       ) : null}
     </main>

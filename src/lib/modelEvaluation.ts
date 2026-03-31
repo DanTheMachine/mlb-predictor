@@ -3,6 +3,9 @@ export type ParsedPredictionRow = {
   away: string
   home: string
   lookupKey: string
+  awayRuns: number | null
+  homeRuns: number | null
+  projectedTotal: number | null
   moneylineRec: string
   moneylineEdgePct: number | null
   runLineRec: string
@@ -133,6 +136,10 @@ function columnIndex(headers: string[], name: string) {
   return headers.findIndex((header) => header === name.toLowerCase())
 }
 
+function columnIndexAny(headers: string[], names: string[]) {
+  return names.map((name) => columnIndex(headers, name)).find((index) => index >= 0) ?? -1
+}
+
 function parseNumber(value: string): number | null {
   const cleaned = value.trim().replace(/[%+]/g, '')
   if (!cleaned || cleaned === 'PASS' || cleaned === '-') return null
@@ -173,6 +180,9 @@ export function parsePredictionsCsv(text: string): ParsedPredictionRow[] {
     away: columnIndex(headers, 'Away'),
     home: columnIndex(headers, 'Home'),
     lookupKey: columnIndex(headers, 'LookupKey'),
+    awayRuns: columnIndex(headers, 'AwayRuns'),
+    homeRuns: columnIndex(headers, 'HomeRuns'),
+    projectedTotal: columnIndex(headers, 'Total'),
     moneylineRec: columnIndex(headers, 'MoneylineRec'),
     moneylineEdgePct: columnIndex(headers, 'MoneylineEdgePct'),
     runLineRec: columnIndex(headers, 'RunLineRec'),
@@ -202,6 +212,9 @@ export function parsePredictionsCsv(text: string): ParsedPredictionRow[] {
         away: get(idx.away).toUpperCase(),
         home: get(idx.home).toUpperCase(),
         lookupKey: get(idx.lookupKey),
+        awayRuns: parseNumber(get(idx.awayRuns)),
+        homeRuns: parseNumber(get(idx.homeRuns)),
+        projectedTotal: parseNumber(get(idx.projectedTotal)),
         moneylineRec: get(idx.moneylineRec),
         moneylineEdgePct: parseNumber(get(idx.moneylineEdgePct)),
         runLineRec: get(idx.runLineRec),
@@ -230,8 +243,8 @@ export function parseResultsCsv(text: string): ParsedResultRow[] {
     date: columnIndex(headers, 'Date'),
     away: columnIndex(headers, 'Away'),
     home: columnIndex(headers, 'Home'),
-    awayScore: columnIndex(headers, 'AwayScore'),
-    homeScore: columnIndex(headers, 'HomeScore'),
+    awayScore: columnIndexAny(headers, ['AwayScore', 'Away Score']),
+    homeScore: columnIndexAny(headers, ['HomeScore', 'Home Score']),
     lookupKey: columnIndex(headers, 'LookupKey'),
   }
 

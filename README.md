@@ -16,6 +16,7 @@ MLB predictor app for the `game_sims` workspace.
 The MLB app is no longer a scaffold. It now includes:
 
 - Predictor / Results Tracker / Model Eval tabs
+- independent Results Tracker and Model Eval workflows
 - live MLB team-model refresh
 - daily schedule loading
 - live weather and ESPN odds integration
@@ -74,7 +75,10 @@ Game card header behavior:
 - final scores
 - `LookupKey`
 
-These two files are intended to be used together in Model Eval for grading and ROI analysis.
+These two files are now used in two separate places:
+
+- `Results Tracker` for a persistent import-and-grade workflow
+- `Model Eval` for threshold tuning and ROI analysis
 
 ## CI
 
