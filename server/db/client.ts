@@ -3,7 +3,6 @@ import { PrismaClient } from '@prisma/client'
 import { appConfig, isDbConfigured } from '../config.js'
 
 declare global {
-  // eslint-disable-next-line no-var
   var __mlbPrisma__: PrismaClient | undefined
 }
 

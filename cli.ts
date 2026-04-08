@@ -9,6 +9,7 @@ import {
   refreshTeamStats,
 } from './server/services/mlbAutomation.js'
 
+// eslint-disable-next-line no-unused-vars
 type CommandHandler = (args: Record<string, string | boolean>) => Promise<unknown>
 
 function parseArgs(argv: string[]) {

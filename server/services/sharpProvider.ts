@@ -8,6 +8,7 @@ export type SharpProviderResult = {
 
 export type SharpProvider = {
   name: string
+  // eslint-disable-next-line no-unused-vars
   load(date: string, rows: ScheduleRow[]): Promise<SharpProviderResult[]>
 }
 
@@ -51,6 +52,10 @@ export const espnDerivedSharpProvider: SharpProvider = {
   },
 }
 
-export function resolveSharpProvider(_name: string): SharpProvider {
+export function resolveSharpProvider(name: string): SharpProvider {
+  if (name === espnDerivedSharpProvider.name) {
+    return espnDerivedSharpProvider
+  }
+
   return espnDerivedSharpProvider
 }
