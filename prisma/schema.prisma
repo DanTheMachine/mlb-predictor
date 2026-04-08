@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model TeamStatSnapshot {
+  id           String   @id @default(cuid())
+  businessDate DateTime
+  sourceSeason Int
+  fetchedAt    DateTime
+  payload      Json
+  createdAt    DateTime @default(now())
+
+  @@unique([businessDate, sourceSeason])
+}
+
+model SlateGame {
+  id           String   @id @default(cuid())
+  businessDate DateTime
+  lookupKey    String
+  awayTeam     String
+  homeTeam     String
+  gameTime     String?
+  gameDateIso  DateTime?
+  status       String   @default("loaded")
+  context      Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, lookupKey])
+}
+
+model MarketOddsSnapshot {
+  id           String   @id @default(cuid())
+  businessDate DateTime
+  lookupKey    String
+  source       String
+  odds         Json
+  createdAt    DateTime @default(now())
+
+  @@unique([businessDate, lookupKey, source])
+}
+
+model SharpSignalRaw {
+  id           String   @id @default(cuid())
+  businessDate DateTime
+  lookupKey    String
+  provider     String
+  payload      Json
+  fetchedAt    DateTime @default(now())
+
+  @@unique([businessDate, lookupKey, provider])
+}
+
+model SharpSignalNormalized {
+  id                     String   @id @default(cuid())
+  businessDate           DateTime
+  lookupKey              String
+  provider               String
+  source                 String
+  steamLean              String
+  reverseLean            String
+  openingHomeMoneyline   Int?
+  openingAwayMoneyline   Int?
+  openingTotal           Float?
+  moneylineHomeBetsPct   Float?
+  moneylineHomeMoneyPct  Float?
+  totalOverBetsPct       Float?
+  totalOverMoneyPct      Float?
+  snapshot               Json
+  lastUpdated            DateTime
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([businessDate, lookupKey, provider])
+}
+
+model PredictionRun {
+  id            String       @id @default(cuid())
+  businessDate  DateTime
+  modelVersion  String
+  reviewStatus  String       @default("pending_review")
+  status        String       @default("completed")
+  exportPath    String?
+  resultsPath   String?
+  summary       Json
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  predictions   Prediction[]
+
+  @@index([businessDate, createdAt(sort: Desc)])
+}
+
+model Prediction {
+  id              String        @id @default(cuid())
+  predictionRunId String
+  businessDate    DateTime
+  lookupKey       String
+  awayTeam        String
+  homeTeam        String
+  payload         Json
+  createdAt       DateTime      @default(now())
+  predictionRun   PredictionRun @relation(fields: [predictionRunId], references: [id], onDelete: Cascade)
+
+  @@unique([predictionRunId, lookupKey])
+  @@index([businessDate, lookupKey])
+}
+
+model GameResult {
+  id           String   @id @default(cuid())
+  businessDate DateTime
+  lookupKey    String
+  awayTeam     String
+  homeTeam     String
+  awayScore    Int
+  homeScore    Int
+  payload      Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, lookupKey])
+}
+
+model EvaluationSummary {
+  id           String   @id @default(cuid())
+  fromDate     DateTime
+  toDate       DateTime
+  modelVersion String?
+  thresholds   Json
+  summary      Json
+  createdAt    DateTime @default(now())
+}
+
+model ModelVersion {
+  id          String   @id @default(cuid())
+  version     String   @unique
+  description String?
+  parameters  Json
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+}
+
+model CalibrationRun {
+  id           String   @id @default(cuid())
+  modelVersion String?
+  status       String   @default("planned")
+  output       Json
+  createdAt    DateTime @default(now())
+}

@@ -95,12 +95,50 @@ U 7
           source: 'manual',
           awayMoneyline: -115,
           homeMoneyline: 105,
-          runLine: -1.5,
+          runLine: 1.5,
           runLineAwayOdds: 155,
           runLineHomeOdds: -165,
           overUnder: 7,
           overOdds: -105,
           underOdds: -105,
+        },
+      },
+    ])
+  })
+
+  it('keeps the cardinals as the away -1.5 side when washington is listed +1.5 at home', () => {
+    const raw = `
+Michael McGreevy/Miles Mikolas: CATV | NATV1:05 PM
+ST. LOUIS CARDINALS
+955
+- 1 ½
++ 140
+O 8 ½
+Even
+- 115
+WASHINGTON NATIONALS
+956
++ 1 ½
+- 150
+U 8 ½
+- 110
++ 105
+`
+
+    expect(parseBulkOdds(raw)).toEqual([
+      {
+        awayAbbr: 'STL',
+        homeAbbr: 'WSH',
+        odds: {
+          source: 'manual',
+          awayMoneyline: -115,
+          homeMoneyline: 105,
+          runLine: 1.5,
+          runLineAwayOdds: 140,
+          runLineHomeOdds: -150,
+          overUnder: 8.5,
+          overOdds: 100,
+          underOdds: -110,
         },
       },
     ])

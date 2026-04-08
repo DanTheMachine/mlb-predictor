@@ -85,9 +85,15 @@ const BULK_NAME_MAP: Record<string, TeamAbbr> = {
 const normalizeFractionGlyphs = (value: string): string =>
   value
     .trim()
-    .replace(/\s*[Ã‚]?Â½/g, '.5')
-    .replace(/\s*[Ã‚]?Â¼/g, '.25')
-    .replace(/\s*[Ã‚]?Â¾/g, '.75')
+    .replace(/\s*[Ãƒâ€š]?Ã‚Â½/g, '.5')
+    .replace(/\s*[Ãƒâ€š]?Ã‚Â¼/g, '.25')
+    .replace(/\s*[Ãƒâ€š]?Ã‚Â¾/g, '.75')
+    .replace(/\s*Â½/g, '.5')
+    .replace(/\s*Â¼/g, '.25')
+    .replace(/\s*Â¾/g, '.75')
+    .replace(/\s*½/g, '.5')
+    .replace(/\s*¼/g, '.25')
+    .replace(/\s*¾/g, '.75')
     .replace(/\s+/g, ' ')
 
 const parseOddsNum = (value: string | undefined): number | null => {

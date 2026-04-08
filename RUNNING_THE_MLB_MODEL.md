@@ -16,7 +16,7 @@ The MLB app uses a local proxy for:
 - weather
 - ESPN odds
 
-Run this from `C:\projects\game_sims\mlb_predictor` in a separate terminal:
+Run this from the `mlb_predictor` project directory in a separate terminal:
 
 ```bash
 npm run proxy
@@ -35,6 +35,12 @@ Recommended startup order:
 1. `npm run proxy`
 2. `npm run dev`
 3. Open the MLB predictor UI
+
+## Cross-Platform Notes
+
+- The app, API, CLI, Prisma, and Postgres setup are intended to work on both Windows and macOS.
+- The Airflow DAG is now platform-neutral and chooses `npm` vs `npm.cmd` automatically based on the host OS.
+- If Airflow is not running from the repo root, set `MLB_PREDICTOR_DIR` to the project directory before starting Airflow.
 
 ## Normal Predictor Workflow
 

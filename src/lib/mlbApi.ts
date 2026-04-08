@@ -7,6 +7,7 @@ import type {
   OddsInput,
   RecentFormSummary,
   ScheduleRow,
+  SharpSignalInput,
   StarterStats,
   TeamAbbr,
   TeamStats,
@@ -152,6 +153,8 @@ type ScheduleFetcher = (date: string) => Promise<LiveScheduleResponse>
 type LineupFetcher = (gamePk: number) => Promise<LineupSnapshot | null>
 // eslint-disable-next-line no-unused-vars
 type OddsFetcher = (date: string) => Promise<Partial<Record<string, OddsInput>>>
+// eslint-disable-next-line no-unused-vars
+type SharpFetcher = (date: string) => Promise<Partial<Record<string, SharpSignalInput>>>
 
 const TEAM_ID_MAP: Record<number, TeamAbbr> = {
   108: 'LAA',
@@ -424,6 +427,24 @@ async function fetchEspnOddsMap(date: string): Promise<Partial<Record<string, Od
   return map
 }
 
+async function fetchEspnSharpSignalsMap(date: string): Promise<Partial<Record<string, SharpSignalInput>>> {
+  const response = await fetch(`${PROXY_BASE_URL}/espn/mlb/scoreboard?date=${encodeURIComponent(toEspnDate(date))}`)
+  if (!response.ok) {
+    return {}
+  }
+
+  const payload = (await response.json()) as EspnScoreboardResponse
+  const map: Partial<Record<string, SharpSignalInput>> = {}
+
+  for (const event of payload.events ?? []) {
+    const parsed = parseSharpSignalsFromEspnEvent(event)
+    if (!parsed) continue
+    map[oddsLookupKey(parsed.homeTeam, parsed.awayTeam)] = parsed.sharpInput
+  }
+
+  return map
+}
+
 export async function fetchLiveScheduleRows(
   date: string,
   options: {
@@ -431,6 +452,7 @@ export async function fetchLiveScheduleRows(
     weatherFetcher?: WeatherFetcher
     lineupFetcher?: LineupFetcher
     oddsFetcher?: OddsFetcher
+    sharpFetcher?: SharpFetcher
   } = {},
 ): Promise<ScheduleRow[]> {
   const schedule = await (options.scheduleFetcher ?? fetchSchedule)(date)
@@ -438,8 +460,9 @@ export async function fetchLiveScheduleRows(
   const weatherFetcher = options.weatherFetcher ?? fetchWeather
   const lineupFetcher = options.lineupFetcher ?? fetchLineup
   const oddsMap = await (options.oddsFetcher ?? fetchEspnOddsMap)(date)
+  const sharpMap = await (options.sharpFetcher ?? fetchEspnSharpSignalsMap)(date)
 
-  const rows = await Promise.all(games.map(async (game) => buildLiveScheduleRow(game, weatherFetcher, lineupFetcher, oddsMap)))
+  const rows = await Promise.all(games.map(async (game) => buildLiveScheduleRow(game, weatherFetcher, lineupFetcher, oddsMap, sharpMap)))
 
   return rows.filter((row): row is ScheduleRow => row !== null)
 }
@@ -448,6 +471,7 @@ export async function fetchMlbScheduleRows(date: string): Promise<ScheduleRow[]>
   return fetchLiveScheduleRows(date, {
     weatherFetcher: async () => null,
     oddsFetcher: async () => ({}),
+    sharpFetcher: async () => ({}),
   })
 }
 
@@ -513,6 +537,7 @@ async function buildLiveScheduleRow(
   weatherFetcher: WeatherFetcher,
   lineupFetcher: LineupFetcher,
   oddsMap: Partial<Record<string, OddsInput>>,
+  sharpMap: Partial<Record<string, SharpSignalInput>>,
 ): Promise<ScheduleRow | null> {
   const awayTeam = normalizeMlbTeam(game.teams?.away?.team)
   const homeTeam = normalizeMlbTeam(game.teams?.home?.team)
@@ -527,7 +552,9 @@ async function buildLiveScheduleRow(
   const lineup = game.gamePk ? await lineupFetcher(game.gamePk) : null
   const awayStarter = resolveLiveStarter(awayTeam, game.teams?.away?.probablePitcher)
   const homeStarter = resolveLiveStarter(homeTeam, game.teams?.home?.probablePitcher)
-  const odds = oddsMap[oddsLookupKey(homeTeam, awayTeam)] ?? defaultOddsForGame(homeTeam, awayTeam)
+  const lookup = oddsLookupKey(homeTeam, awayTeam)
+  const odds = oddsMap[lookup] ?? defaultOddsForGame(homeTeam, awayTeam)
+  const sharpInput = sharpMap[lookup] ?? null
 
   return {
     game: {
@@ -552,7 +579,7 @@ async function buildLiveScheduleRow(
     weatherLastUpdated: weather ? now : '',
     availabilityNotes: buildAvailabilityNotes(awayTeam, homeTeam, weather?.summary, lineup),
     recentForm: buildRecentForm(awayTeam, homeTeam, now),
-    sharpInput: null,
+    sharpInput,
     compositeRecommendation: null,
     odds,
     result: null,
@@ -737,6 +764,49 @@ export function parseOddsFromEspnEvent(event: EspnEvent): { homeTeam: TeamAbbr; 
   }
 }
 
+export function parseSharpSignalsFromEspnEvent(event: EspnEvent): { homeTeam: TeamAbbr; awayTeam: TeamAbbr; sharpInput: SharpSignalInput } | null {
+  const competition = event.competitions?.[0]
+  const home = normalizeEspnAbbr(competition?.competitors?.find((entry) => entry.homeAway === 'home')?.team?.abbreviation)
+  const away = normalizeEspnAbbr(competition?.competitors?.find((entry) => entry.homeAway === 'away')?.team?.abbreviation)
+
+  if (!home || !away) return null
+
+  const odds = competition?.odds?.[0]
+  if (!odds) return null
+
+  const openingHomeMoneyline = parseEspnOdds(odds.moneyline?.home?.open?.odds)
+  const openingAwayMoneyline = parseEspnOdds(odds.moneyline?.away?.open?.odds)
+  const currentHomeMoneyline = parseEspnOdds(odds.moneyline?.home?.close?.odds ?? odds.moneyline?.home?.open?.odds)
+  const currentAwayMoneyline = parseEspnOdds(odds.moneyline?.away?.close?.odds ?? odds.moneyline?.away?.open?.odds)
+  const openingTotal = parseEspnTotalLine(odds.total?.over?.open?.line)
+  const currentTotal = parseEspnTotalLine(odds.total?.over?.close?.line ?? odds.total?.over?.open?.line)
+
+  return {
+    homeTeam: home,
+    awayTeam: away,
+    sharpInput: {
+      source: 'espn-derived',
+      lastUpdated: new Date().toISOString(),
+      openingHomeMoneyline,
+      openingAwayMoneyline,
+      openingTotal,
+      moneylineHomeBetsPct: null,
+      moneylineHomeMoneyPct: null,
+      totalOverBetsPct: null,
+      totalOverMoneyPct: null,
+      steamLean: deriveSteamLean({
+        openingHomeMoneyline,
+        currentHomeMoneyline,
+        openingAwayMoneyline,
+        currentAwayMoneyline,
+        openingTotal,
+        currentTotal,
+      }),
+      reverseLean: 'none',
+    },
+  }
+}
+
 export async function fetchEspnGameOdds(homeTeam: TeamAbbr, awayTeam: TeamAbbr, date = new Date().toISOString().slice(0, 10)): Promise<OddsInput | null> {
   const response = await fetch(`${PROXY_BASE_URL}/espn/mlb/scoreboard?date=${encodeURIComponent(toEspnDate(date))}`)
   if (!response.ok) {
@@ -767,6 +837,12 @@ function parseEspnOdds(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function parseEspnTotalLine(value: string | undefined) {
+  if (!value) return null
+  const parsed = Number.parseFloat(value.replace(/[ou]/gi, ''))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function normalizeEspnAbbr(value: string | undefined): TeamAbbr | null {
   if (!value) return null
   return TEAM_CODE_MAP[value.toUpperCase()] ?? null
@@ -774,6 +850,37 @@ function normalizeEspnAbbr(value: string | undefined): TeamAbbr | null {
 
 function toEspnDate(date: string) {
   return date.replaceAll('-', '')
+}
+
+function deriveSteamLean(args: {
+  openingHomeMoneyline: number | null
+  currentHomeMoneyline: number | null
+  openingAwayMoneyline: number | null
+  currentAwayMoneyline: number | null
+  openingTotal: number | null
+  currentTotal: number | null
+}): SharpSignalInput['steamLean'] {
+  const { openingHomeMoneyline, currentHomeMoneyline, openingAwayMoneyline, currentAwayMoneyline, openingTotal, currentTotal } = args
+
+  if (openingHomeMoneyline != null && currentHomeMoneyline != null) {
+    const homeMove = currentHomeMoneyline - openingHomeMoneyline
+    if (homeMove <= -10) return 'home'
+    if (homeMove >= 10) return 'away'
+  }
+
+  if (openingAwayMoneyline != null && currentAwayMoneyline != null) {
+    const awayMove = currentAwayMoneyline - openingAwayMoneyline
+    if (awayMove <= -10) return 'away'
+    if (awayMove >= 10) return 'home'
+  }
+
+  if (openingTotal != null && currentTotal != null) {
+    const totalMove = currentTotal - openingTotal
+    if (totalMove >= 0.5) return 'over'
+    if (totalMove <= -0.5) return 'under'
+  }
+
+  return 'none'
 }
 
 function toTeamStatMap(payload: TeamStatsResponse): TeamStatMap {

@@ -33,11 +33,12 @@ export function analyzeBetting(result: PredictionResult, odds: OddsInput): Betti
   const runLineVig = homeRunLineImplied + awayRunLineImplied
   const homeRunLineEdge = homeCoverProb - homeRunLineImplied / runLineVig
   const awayRunLineEdge = awayCoverProb - awayRunLineImplied / runLineVig
+  const awayRunLine = -odds.runLine
   const runLineRec =
     homeRunLineEdge > 0.03
       ? `home ${odds.runLine > 0 ? '+' : ''}${odds.runLine}`
       : awayRunLineEdge > 0.03
-        ? 'away +1.5'
+        ? `away ${awayRunLine > 0 ? '+' : ''}${awayRunLine}`
         : 'pass'
   const runLineEdge = Math.max(homeRunLineEdge, awayRunLineEdge) * 100
 

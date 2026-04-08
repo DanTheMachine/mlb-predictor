@@ -5,19 +5,27 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
 ## Current Product State
 
 - React + TypeScript + Vite app is live
-- tabs exist for `Predictor`, `Results Tracker`, and `Model Eval`
+- tabs exist for `Predictor`, `Automation`, `Results Tracker`, and `Model Eval`
 - `Results Tracker` and `Model Eval` are now independent workflows
+- `Automation` tab now exists as an API-backed dashboard with manual fallback still preserved in the `Predictor` tab
 - Predictor tab contains:
   - MLB model data refresh
   - daily schedule workflow
   - bulk line editing
   - single-game tools in a collapsible panel
+- automation foundation now exists outside the React UI:
+  - shared backend services in `server/`
+  - TypeScript CLI in `cli.ts`
+  - lightweight API in `api.ts`
+  - Prisma schema and migration scaffold in `prisma/`
+  - Airflow DAG scaffold in `airflow/dags/`
 - built-in blended default team ratings
 - daily schedule cards support:
   - probable starters
   - lineups
   - weather
   - odds
+  - sharp information
   - three market-specific composite recommendation cards (`ML`, `O/U`, `RL`)
   - projected score + best composite recommendation in the game-card header
   - visible team rating inputs used by the model
@@ -36,6 +44,7 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
    - loads weather
    - interprets wind direction relative to the home park orientation
    - loads ESPN odds when available
+   - now also derives a first-pass sharp snapshot from ESPN opening vs close movement
 4. Optionally use `Bulk Edit Lines`
    - pasted odds now override active game odds as `manual`
    - manual odds count as valid market odds
@@ -48,6 +57,7 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
 
 - The `Results Tracker` tab now mirrors the NBA-style import flow rather than depending on `Model Eval`
 - It owns its own state through `src/hooks/useResultsTracker.ts`
+- it is still primarily CSV/manual at this stage and is not yet DB-backed by default
 - It supports:
   - pasting exported predictions CSV
   - pasting results CSV
@@ -64,6 +74,52 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
 - `Model Eval` remains a separate calibration / threshold-tuning screen
 - It no longer feeds state into `Results Tracker`
 - It still consumes the same exported predictions + results CSV data through `src/lib/modelEvaluation.ts`
+- DB-backed evaluation logic now exists in the automation layer, but the React `Model Eval` tab still defaults to manual CSV paste
+
+## Automation Workflow
+
+- the automation foundation is now implemented but not fully activated end-to-end
+- current automation pieces:
+  - `server/services/mlbAutomation.ts`
+    - refresh team stats
+    - load slate
+    - load sharp signals
+    - generate predictions
+    - export predictions CSV
+    - ingest results
+    - export results CSV
+    - evaluate persisted runs
+  - `api.ts`
+    - exposes automation runs, exports, evaluation, prediction trigger, and results ingest endpoints
+  - `cli.ts`
+    - operational non-UI entrypoint for automation and manual fallback
+  - `airflow/dags/mlb_automation.py`
+    - platform-neutral DAG scaffold that shells out to the CLI
+- current fallback behavior:
+  - if `DATABASE_URL` is absent, CLI and API stay usable in non-persistent fallback mode
+  - the React app manual predictor workflow still works without Postgres or Airflow
+- next required infrastructure step:
+  - set up a local Postgres instance
+  - copy `.env.example` to `.env`
+  - populate `DATABASE_URL`
+  - run Prisma migrations
+
+## Secrets / Config
+
+- `.env` is now the local development config source
+- `.env.example` documents:
+  - `DATABASE_URL`
+  - `API_PORT`
+  - `EXPORT_DIR`
+  - `SHARP_PROVIDER`
+  - fallback/persistence feature flags
+- production intent remains environment variables or a secret manager rather than checked-in secrets
+
+## Platform Notes
+
+- core app, API, CLI, Prisma, and Postgres setup are intended to work on both Windows and macOS
+- the Airflow DAG is now platform-neutral and chooses `npm` vs `npm.cmd` automatically
+- if Airflow is launched outside the repo root, use `MLB_PREDICTOR_DIR` to point it to the project directory
 
 ## Odds Sources
 
@@ -75,6 +131,13 @@ The app now distinguishes three odds sources:
   - pasted or user-edited odds
 - `model`
   - generated fallback odds when no market odds are available
+
+Sharp data behavior:
+
+- a `sharpInput` snapshot now exists on schedule rows
+- current source is `espn-derived`
+- it is derived from opening vs closing line movement, not a dedicated paid sharp-data feed yet
+- sharp data currently affects composite recommendation context and reporting, not the core projection equations
 
 Important behavior:
 
@@ -146,6 +209,17 @@ These are consumed by both:
 
 ## Key Files
 
+- `api.ts`
+- `cli.ts`
+- `server/config.ts`
+- `server/db/repositories.ts`
+- `server/services/mlbAutomation.ts`
+- `prisma/schema.prisma`
+- `airflow/dags/mlb_automation.py`
+- `.env.example`
+- `src/components/AutomationDashboard.tsx`
+- `src/hooks/useAutomationDashboard.ts`
+- `src/lib/automationApi.ts`
 - `src/components/ResultsTracker.tsx`
 - `src/components/ModelEvaluation.tsx`
 - `src/components/ScheduleAnalysis.tsx`
@@ -161,6 +235,13 @@ These are consumed by both:
 - `src/lib/resultsTracker.ts`
 - `proxy.ts`
 - `.github/workflows/ci.yml`
+
+## Current Gaps
+
+- Prisma schema and migration scaffold exist, but migrations have not yet been applied to a live local Postgres instance
+- API-backed automation dashboard is wired into the app, but `Results Tracker` and `Model Eval` are still manual-first
+- Airflow DAG exists as a scaffold and has not yet been validated in a live Airflow runtime
+- no dedicated sharp-data vendor is integrated yet beyond ESPN-derived movement signals
 
 ## CI
 

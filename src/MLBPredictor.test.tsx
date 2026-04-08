@@ -9,6 +9,7 @@ describe('MLBPredictor', () => {
 
     expect(screen.getByRole('heading', { name: 'MLB Predictor' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Predictor' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Automation' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Daily Schedule' })).toBeTruthy()
   })
 })

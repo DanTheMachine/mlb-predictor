@@ -44,4 +44,39 @@ describe('betting helpers', () => {
     expect(analysis.mlValueSide).toBe('home')
     expect(analysis.ouRec).toBe('over')
   })
+
+  it('labels the away run line using the opposite of the home line', () => {
+    const result: PredictionResult = {
+      projectedHomeRuns: 2.9,
+      projectedAwayRuns: 5.2,
+      projectedTotal: 8.1,
+      projectedMargin: -2.3,
+      homeWinProb: 0.31,
+      awayWinProb: 0.69,
+      homeRunLineCoverProb: 0.34,
+      awayRunLineCoverProb: 0.66,
+      overProb: 0.51,
+      underProb: 0.49,
+      homeStarterInnings: 5.4,
+      awayStarterInnings: 6.1,
+      modelLean: 'Away side lean',
+      features: [],
+    }
+
+    const odds: OddsInput = {
+      source: 'manual',
+      homeMoneyline: 105,
+      awayMoneyline: -115,
+      runLine: 1.5,
+      runLineHomeOdds: -150,
+      runLineAwayOdds: 140,
+      overUnder: 8.5,
+      overOdds: -110,
+      underOdds: -110,
+    }
+
+    const analysis = analyzeBetting(result, odds)
+
+    expect(analysis.runLineRec).toBe('away -1.5')
+  })
 })

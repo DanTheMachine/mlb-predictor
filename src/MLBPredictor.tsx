@@ -1,20 +1,23 @@
 import { useState } from 'react'
 
+import { AutomationDashboard } from './components/AutomationDashboard'
 import { ModelEvaluation } from './components/ModelEvaluation'
 import { ResultsTracker } from './components/ResultsTracker'
 import { ScheduleAnalysis } from './components/ScheduleAnalysis'
 import { SingleGameControls } from './components/SingleGameControls'
 import { SingleGameResults } from './components/SingleGameResults'
+import { useAutomationDashboard } from './hooks/useAutomationDashboard'
 import { useMlbModelData } from './hooks/useMlbModelData'
 import { usePredictorState } from './hooks/usePredictorState'
 import { useResultsTracker } from './hooks/useResultsTracker'
 
-type PredictorTab = 'predictor' | 'results' | 'evaluation'
+type PredictorTab = 'predictor' | 'automation' | 'results' | 'evaluation'
 
 export function MLBPredictor() {
   const modelData = useMlbModelData()
   const predictorState = usePredictorState(modelData.teams)
   const resultsTracker = useResultsTracker()
+  const automationDashboard = useAutomationDashboard()
   const [activeTab, setActiveTab] = useState<PredictorTab>('predictor')
   const [singleGameOpen, setSingleGameOpen] = useState(false)
 
@@ -35,6 +38,9 @@ export function MLBPredictor() {
         </button>
         <button className={`tab-button ${activeTab === 'evaluation' ? 'tab-button-active' : ''}`} onClick={() => setActiveTab('evaluation')}>
           Model Eval
+        </button>
+        <button className={`tab-button ${activeTab === 'automation' ? 'tab-button-active' : ''}`} onClick={() => setActiveTab('automation')}>
+          Automation
         </button>
       </div>
 
@@ -74,6 +80,12 @@ export function MLBPredictor() {
               </div>
             ) : null}
           </section>
+        </section>
+      ) : null}
+
+      {activeTab === 'automation' ? (
+        <section className="grid">
+          <AutomationDashboard {...automationDashboard} />
         </section>
       ) : null}
 
