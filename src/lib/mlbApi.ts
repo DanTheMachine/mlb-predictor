@@ -428,21 +428,25 @@ async function fetchEspnOddsMap(date: string): Promise<Partial<Record<string, Od
 }
 
 async function fetchEspnSharpSignalsMap(date: string): Promise<Partial<Record<string, SharpSignalInput>>> {
-  const response = await fetch(`${PROXY_BASE_URL}/espn/mlb/scoreboard?date=${encodeURIComponent(toEspnDate(date))}`)
-  if (!response.ok) {
+  try {
+    const response = await fetch(`${PROXY_BASE_URL}/espn/mlb/scoreboard?date=${encodeURIComponent(toEspnDate(date))}`)
+    if (!response.ok) {
+      return {}
+    }
+
+    const payload = (await response.json()) as EspnScoreboardResponse
+    const map: Partial<Record<string, SharpSignalInput>> = {}
+
+    for (const event of payload.events ?? []) {
+      const parsed = parseSharpSignalsFromEspnEvent(event)
+      if (!parsed) continue
+      map[oddsLookupKey(parsed.homeTeam, parsed.awayTeam)] = parsed.sharpInput
+    }
+
+    return map
+  } catch {
     return {}
   }
-
-  const payload = (await response.json()) as EspnScoreboardResponse
-  const map: Partial<Record<string, SharpSignalInput>> = {}
-
-  for (const event of payload.events ?? []) {
-    const parsed = parseSharpSignalsFromEspnEvent(event)
-    if (!parsed) continue
-    map[oddsLookupKey(parsed.homeTeam, parsed.awayTeam)] = parsed.sharpInput
-  }
-
-  return map
 }
 
 export async function fetchLiveScheduleRows(
