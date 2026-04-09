@@ -1,7 +1,7 @@
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 
 import type { GradingResultRow, TeamRatingsSnapshot } from '../../src/lib/mlbApi.js'
-import type { ScheduleRow, SharpSignalInput } from '../../src/lib/mlbTypes.js'
+import type { OddsInput, ScheduleRow, SharpSignalInput, TeamAbbr } from '../../src/lib/mlbTypes.js'
 import { getPrismaClient } from './client.js'
 import type { AutomationPredictionRow } from '../services/mlbAutomation.js'
 
@@ -180,6 +180,108 @@ export async function saveOddsAndSharp(date: string, rows: ScheduleRow[]) {
   return rows.length
 }
 
+export async function saveOddsOverrides(
+  date: string,
+  rows: Array<{
+    lookupKey: string
+    awayTeam: TeamAbbr
+    homeTeam: TeamAbbr
+    source: string
+    status?: string
+    odds: OddsInput
+    metadata?: Record<string, unknown> | null
+  }>,
+) {
+  const prisma = getPrismaClient()
+  if (!prisma) return 0
+
+  await Promise.all(
+    rows.map((row) =>
+      prisma.oddsOverride.upsert({
+        where: {
+          businessDate_lookupKey_source: {
+            businessDate: toBusinessDate(date),
+            lookupKey: row.lookupKey,
+            source: row.source,
+          },
+        },
+        update: {
+          awayTeam: row.awayTeam,
+          homeTeam: row.homeTeam,
+          status: row.status ?? 'staged',
+          odds: toJson(row.odds),
+          metadata: row.metadata ? toJson(row.metadata) : Prisma.JsonNull,
+        },
+        create: {
+          businessDate: toBusinessDate(date),
+          lookupKey: row.lookupKey,
+          awayTeam: row.awayTeam,
+          homeTeam: row.homeTeam,
+          source: row.source,
+          status: row.status ?? 'staged',
+          odds: toJson(row.odds),
+          metadata: row.metadata ? toJson(row.metadata) : undefined,
+        },
+      }),
+    ),
+  )
+
+  return rows.length
+}
+
+export async function listOddsOverridesByDate(date: string) {
+  const prisma = getPrismaClient()
+  if (!prisma) return []
+
+  return prisma.oddsOverride.findMany({
+    where: {
+      businessDate: toBusinessDate(date),
+    },
+    orderBy: [{ updatedAt: 'desc' }, { lookupKey: 'asc' }],
+  })
+}
+
+export async function getOddsOverridesForDate(
+  date: string,
+  args?: {
+    source?: string
+    statuses?: string[]
+  },
+) {
+  const prisma = getPrismaClient()
+  if (!prisma) return []
+
+  return prisma.oddsOverride.findMany({
+    where: {
+      businessDate: toBusinessDate(date),
+      source: args?.source,
+      status: args?.statuses?.length ? { in: args.statuses } : undefined,
+    },
+    orderBy: [{ updatedAt: 'desc' }, { lookupKey: 'asc' }],
+  })
+}
+
+export async function updateOddsOverrideStatus(args: {
+  date: string
+  status: string
+  source?: string
+  lookupKeys?: string[]
+}) {
+  const prisma = getPrismaClient()
+  if (!prisma) return { count: 0 }
+
+  return prisma.oddsOverride.updateMany({
+    where: {
+      businessDate: toBusinessDate(args.date),
+      source: args.source,
+      lookupKey: args.lookupKeys?.length ? { in: args.lookupKeys } : undefined,
+    },
+    data: {
+      status: args.status,
+    },
+  })
+}
+
 export async function createPredictionRun(date: string, modelVersion: string, summary: Record<string, unknown>) {
   const prisma = getPrismaClient()
   if (!prisma) return null
@@ -191,6 +293,32 @@ export async function createPredictionRun(date: string, modelVersion: string, su
       summary: toJson(summary),
     },
   })
+}
+
+export async function findOrCreatePredictionRun(date: string, modelVersion: string, summary: Record<string, unknown>) {
+  const prisma = getPrismaClient()
+  if (!prisma) return null
+
+  const existing = await prisma.predictionRun.findFirst({
+    where: {
+      businessDate: toBusinessDate(date),
+      modelVersion,
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+  })
+
+  if (existing) {
+    return prisma.predictionRun.update({
+      where: { id: existing.id },
+      data: {
+        summary: toJson(summary),
+      },
+    })
+  }
+
+  return createPredictionRun(date, modelVersion, summary)
 }
 
 export async function savePredictions(runId: string | null, date: string, rows: AutomationPredictionRow[]) {
@@ -301,6 +429,21 @@ export async function getPredictionsByRunOrDate(args: { runId?: string; date?: s
   }
 
   return []
+}
+
+export async function getPredictionsByDateRange(fromDate: string, toDate: string) {
+  const prisma = getPrismaClient()
+  if (!prisma) return []
+
+  return prisma.prediction.findMany({
+    where: {
+      businessDate: {
+        gte: toBusinessDate(fromDate),
+        lte: toBusinessDate(toDate),
+      },
+    },
+    orderBy: [{ businessDate: 'desc' }, { lookupKey: 'asc' }],
+  })
 }
 
 export async function getResultsByDateRange(fromDate: string, toDate: string) {

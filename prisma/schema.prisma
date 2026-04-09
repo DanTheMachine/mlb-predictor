@@ -45,6 +45,23 @@ model MarketOddsSnapshot {
   @@unique([businessDate, lookupKey, source])
 }
 
+model OddsOverride {
+  id           String   @id @default(cuid())
+  businessDate DateTime
+  lookupKey    String
+  awayTeam     String
+  homeTeam     String
+  source       String
+  status       String   @default("staged")
+  odds         Json
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, lookupKey, source])
+  @@index([businessDate, status])
+}
+
 model SharpSignalRaw {
   id           String   @id @default(cuid())
   businessDate DateTime

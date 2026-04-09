@@ -18,16 +18,16 @@ def npm_command():
 
 def run_cli(command: str, **context):
     ds = context["ds"]
-    macros = context["macros"]
+    use_overrides = os.environ.get("MLB_USE_ODDS_OVERRIDES", "").lower() in {"1", "true", "yes", "on"}
+    override_source = os.environ.get("MLB_ODDS_OVERRIDE_SOURCE", "").strip()
     command_args = {
-        "refresh_team_stats": ["fetch-team-stats", "--date", ds],
-        "load_slate": ["load-slate", "--date", ds],
-        "generate_predictions": ["run-predictions", "--date", ds],
-        "export_predictions_csv": ["export-predictions-csv", "--date", ds],
-        "ingest_yesterday_results": ["ingest-results", "--date", macros.ds_add(ds, -1)],
-        "export_results_csv": ["export-results-csv", "--date", macros.ds_add(ds, -1)],
-        "evaluate_model": ["evaluate", "--from", macros.ds_add(ds, -30), "--to", macros.ds_add(ds, -1)],
+        "run_daily_pipeline": ["run-daily-pipeline", "--date", ds],
     }[command]
+
+    if use_overrides:
+        command_args.append("--use-odds-overrides")
+    if override_source:
+        command_args.extend(["--override-source", override_source])
 
     subprocess.run(
         [npm_command(), "run", "cli", "--", *command_args],
@@ -43,47 +43,8 @@ with DAG(
     catchup=False,
     tags=["mlb", "predictor", "automation"],
 ) as dag:
-    fetch_team_stats = PythonOperator(
-        task_id="refresh_team_stats",
+    run_daily_pipeline = PythonOperator(
+        task_id="run_daily_pipeline",
         python_callable=run_cli,
-        op_kwargs={"command": "refresh_team_stats"},
+        op_kwargs={"command": "run_daily_pipeline"},
     )
-
-    load_slate = PythonOperator(
-        task_id="load_slate",
-        python_callable=run_cli,
-        op_kwargs={"command": "load_slate"},
-    )
-
-    run_predictions = PythonOperator(
-        task_id="generate_predictions",
-        python_callable=run_cli,
-        op_kwargs={"command": "generate_predictions"},
-    )
-
-    export_predictions = PythonOperator(
-        task_id="export_predictions_csv",
-        python_callable=run_cli,
-        op_kwargs={"command": "export_predictions_csv"},
-    )
-
-    ingest_results = PythonOperator(
-        task_id="ingest_yesterday_results",
-        python_callable=run_cli,
-        op_kwargs={"command": "ingest_yesterday_results"},
-    )
-
-    export_results = PythonOperator(
-        task_id="export_results_csv",
-        python_callable=run_cli,
-        op_kwargs={"command": "export_results_csv"},
-    )
-
-    evaluate_model = PythonOperator(
-        task_id="evaluate_model",
-        python_callable=run_cli,
-        op_kwargs={"command": "evaluate_model"},
-    )
-
-    fetch_team_stats >> load_slate >> run_predictions >> export_predictions
-    export_predictions >> ingest_results >> export_results >> evaluate_model

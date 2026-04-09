@@ -7,9 +7,11 @@ import { fetchCompletedGameResults, fetchLiveScheduleRows, fetchTeamRatings } fr
 import { predictGame } from '../../src/lib/mlbModel.js'
 import { DEFAULT_THRESHOLDS, evaluatePredictions, type ParsedPredictionRow, type ParsedResultRow } from '../../src/lib/modelEvaluation.js'
 import type { LineupConfidence, ScheduleRow, TeamAbbr } from '../../src/lib/mlbTypes.js'
-import { appConfig, assertDateInput, isDbConfigured } from '../config.js'
+import { appConfig, assertDateInput, isDbConfigured, subtractOneDay } from '../config.js'
 import {
   createPredictionRun,
+  getOddsOverridesForDate,
+  getPredictionsByDateRange,
   getPredictionsByRunOrDate,
   getResultsByDateRange,
   listPredictionRuns,
@@ -25,6 +27,11 @@ import { buildPredictionsCsv, buildResultsCsv, type AutomationResultRow } from '
 import { resolveSharpProvider } from './sharpProvider.js'
 
 export const CURRENT_MODEL_VERSION = 'heuristic-v1'
+
+export type PredictionRunOptions = {
+  useOddsOverrides?: boolean
+  overrideSource?: string
+}
 
 export type AutomationPredictionRow = {
   date: string
@@ -73,13 +80,14 @@ export async function refreshTeamStats(dateInput?: string) {
   return snapshot
 }
 
-export async function loadSlate(dateInput?: string) {
+export async function loadSlate(dateInput?: string, options: PredictionRunOptions = {}) {
   const date = assertDateInput(dateInput)
   const rows = await fetchLiveScheduleRows(date)
-  const enrichedRows = await loadSharpSignals(date, rows)
-  await saveSlateRows(date, enrichedRows)
-  await saveOddsAndSharp(date, enrichedRows)
-  return enrichedRows
+  const sharpRows = await loadSharpSignals(date, rows)
+  const finalRows = options.useOddsOverrides ? await applyOddsOverrides(date, sharpRows, options.overrideSource) : sharpRows
+  await saveSlateRows(date, finalRows)
+  await saveOddsAndSharp(date, finalRows)
+  return finalRows
 }
 
 export async function loadSharpSignals(dateInput: string, rows: ScheduleRow[]) {
@@ -97,10 +105,10 @@ export async function loadSharpSignals(dateInput: string, rows: ScheduleRow[]) {
   })
 }
 
-export async function generatePredictions(dateInput?: string) {
+export async function generatePredictions(dateInput?: string, options: PredictionRunOptions = {}) {
   const date = assertDateInput(dateInput)
   const teamSnapshot = await refreshTeamStats(date)
-  const slate = await loadSlate(date)
+  const slate = await loadSlate(date, options)
 
   const predictionRows = slate.map((row) => {
     const result = predictGame({
@@ -168,6 +176,8 @@ export async function generatePredictions(dateInput?: string) {
   const summary = {
     totalGames: predictionRows.length,
     dbPersisted: isDbConfigured(),
+    usedOddsOverrides: Boolean(options.useOddsOverrides),
+    overrideSource: options.overrideSource ?? null,
     generatedAt: new Date().toISOString(),
   }
 
@@ -178,7 +188,32 @@ export async function generatePredictions(dateInput?: string) {
     date,
     modelVersion: CURRENT_MODEL_VERSION,
     runId: run?.id ?? null,
+    usedOddsOverrides: Boolean(options.useOddsOverrides),
     rows: predictionRows,
+  }
+}
+
+export async function runDailyPipeline(dateInput?: string, options: PredictionRunOptions = {}) {
+  const date = assertDateInput(dateInput)
+  const predictions = await generatePredictions(date, options)
+  const predictionsExport = await exportPredictionsCsv({
+    runId: predictions.runId ?? undefined,
+    date,
+  })
+  const resultsDate = subtractOneDay(date)
+  const ingestedResults = await ingestResults(resultsDate)
+  const resultsExport = await exportResultsCsv(resultsDate)
+
+  return {
+    date,
+    resultsDate,
+    usedOddsOverrides: Boolean(options.useOddsOverrides),
+    overrideSource: options.overrideSource ?? null,
+    predictionRunId: predictions.runId,
+    predictionCount: predictions.rows.length,
+    resultsIngested: ingestedResults.length,
+    predictionsExportPath: predictionsExport.path,
+    resultsExportPath: resultsExport.path,
   }
 }
 
@@ -243,9 +278,11 @@ export async function evaluate(dateRange?: { from: string; to: string }) {
 
   const from = assertDateInput(dateRange?.from)
   const to = assertDateInput(dateRange?.to, from)
-  const predictionRecords = await getPredictionsByRunOrDate({})
+  const predictionRecords = await getPredictionsByDateRange(from, to)
   const resultRecords = await getResultsByDateRange(from, to)
-  const predictions = predictionRecords.map((record) => record.payload as unknown as ParsedPredictionRow)
+  const predictions = predictionRecords.map((record) =>
+    toParsedPredictionRow(record.payload as unknown as AutomationPredictionRow),
+  )
   const results = resultRecords.map((record) => record.payload as unknown as ParsedResultRow)
   const report = evaluatePredictions(predictions, results, DEFAULT_THRESHOLDS)
 
@@ -291,4 +328,53 @@ function buildLookupKey(date: string, homeTeam: TeamAbbr, awayTeam: TeamAbbr) {
 
 function freshnessLabel(timestamp?: string | null) {
   return timestamp ?? 'N/A'
+}
+
+async function applyOddsOverrides(date: string, rows: ScheduleRow[], source?: string) {
+  const overrides = await getOddsOverridesForDate(date, {
+    source,
+    statuses: ['approved'],
+  })
+
+  if (!overrides.length) return rows
+
+  const byLookupKey = new Map(
+    overrides.map((override) => [override.lookupKey, override.odds as unknown as ScheduleRow['odds']]),
+  )
+
+  return rows.map((row) => {
+    const lookupKey = buildLookupKey(date, row.game.homeTeam, row.game.awayTeam)
+    const overrideOdds = byLookupKey.get(lookupKey)
+    if (!overrideOdds) return row
+    return {
+      ...row,
+      odds: overrideOdds,
+    }
+  })
+}
+
+function toParsedPredictionRow(row: AutomationPredictionRow): ParsedPredictionRow {
+  return {
+    date: row.date,
+    away: row.awayTeam,
+    home: row.homeTeam,
+    lookupKey: row.lookupKey,
+    awayRuns: row.awayRuns,
+    homeRuns: row.homeRuns,
+    projectedTotal: row.total,
+    moneylineRec: row.moneylineRec,
+    moneylineEdgePct: row.moneylineEdgePct,
+    runLineRec: row.runLineRec,
+    runLineEdgePct: row.runLineEdgePct,
+    totalRec: row.totalRec,
+    totalEdgePct: row.totalEdgePct,
+    marketTotal: row.marketTotal,
+    homeML: row.homeML,
+    awayML: row.awayML,
+    runLine: row.runLine,
+    runLineHomeOdds: row.runLineHomeOdds,
+    runLineAwayOdds: row.runLineAwayOdds,
+    overOdds: row.overOdds,
+    underOdds: row.underOdds,
+  }
 }

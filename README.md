@@ -98,6 +98,8 @@ npm run cli -- evaluate --from 2026-03-01 --to 2026-03-30
 - copy `.env.example` to `.env`
 - set `DATABASE_URL` when Postgres persistence is available
 - leave `DATABASE_URL` unset to run in fallback non-persistent mode
+- the frontend automation client now reads `VITE_AUTOMATION_API_BASE_URL`
+- restart the Vite dev server after changing any `VITE_*` variable
 
 ### Prisma
 
@@ -112,6 +114,62 @@ Apply migrations against your Postgres instance:
 ```bash
 npm run prisma:migrate:dev
 ```
+
+### Sandbox Workflow
+
+Use a separate database such as `mlb_sandbox` when you want to test the pipeline without touching the main `mlb_predictor` database.
+
+1. copy `.env` to `.env.sandbox`
+2. set sandbox-specific values for:
+   - `DATABASE_URL`
+   - `API_PORT`
+   - `VITE_AUTOMATION_API_BASE_URL`
+   - `EXPORT_DIR`
+3. load `.env.sandbox` into the shell before running Prisma, the API, the CLI, or the frontend
+4. apply Prisma migrations to the sandbox database
+5. start the API and frontend from that same loaded environment
+
+Recommended sandbox values:
+
+```env
+DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/mlb_sandbox?schema=public"
+API_PORT=8789
+VITE_AUTOMATION_API_BASE_URL=http://localhost:8789
+EXPORT_DIR="./generated-sandbox"
+```
+
+PowerShell example:
+
+```powershell
+Get-Content .env.sandbox | ForEach-Object {
+  if ($_ -match '^\s*([^#=]+)=(.*)$') {
+    $name = $matches[1].Trim()
+    $value = $matches[2].Trim().Trim('"')
+    [System.Environment]::SetEnvironmentVariable($name, $value, 'Process')
+  }
+}
+```
+
+Then run:
+
+```powershell
+npm.cmd run prisma:migrate:deploy
+```
+
+```powershell
+npm.cmd run api
+```
+
+```powershell
+npm.cmd run dev
+```
+
+Important:
+
+- `API_PORT` controls where the backend listens
+- `VITE_AUTOMATION_API_BASE_URL` controls what the frontend calls
+- if sandbox uses `8789`, the frontend must also point at `http://localhost:8789`
+- restart the frontend if you change `.env` or `.env.sandbox`
 
 ## Odds Behavior
 

@@ -95,6 +95,10 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
     - operational non-UI entrypoint for automation and manual fallback
   - `airflow/dags/mlb_automation.py`
     - platform-neutral DAG scaffold that shells out to the CLI
+  - `server/services/oddsCapture.ts`
+    - Playwright-based login odds capture worker scaffold
+  - `server/services/oddsOverrides.ts`
+    - persisted odds override import/review/apply flow
 - current fallback behavior:
   - if `DATABASE_URL` is absent, CLI and API stay usable in non-persistent fallback mode
   - the React app manual predictor workflow still works without Postgres or Airflow
@@ -103,17 +107,27 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
   - copy `.env.example` to `.env`
   - populate `DATABASE_URL`
   - run Prisma migrations
+- sandbox workflow is supported by loading `.env.sandbox` before starting Prisma, CLI, API, or Vite
 
 ## Secrets / Config
 
 - `.env` is now the local development config source
+- `.env.sandbox` can be used for isolated local pipeline testing against a separate Postgres database
 - `.env.example` documents:
   - `DATABASE_URL`
   - `API_PORT`
+  - `VITE_AUTOMATION_API_BASE_URL`
   - `EXPORT_DIR`
   - `SHARP_PROVIDER`
   - fallback/persistence feature flags
 - production intent remains environment variables or a secret manager rather than checked-in secrets
+
+Important behavior:
+
+- `API_PORT` controls where `api.ts` listens
+- `VITE_AUTOMATION_API_BASE_URL` controls which automation API the React frontend calls
+- changing a `VITE_*` variable requires restarting the Vite dev server
+- the API now sends permissive local CORS headers so the Vite frontend can call it across ports during development
 
 ## Platform Notes
 
@@ -242,6 +256,7 @@ These are consumed by both:
 - API-backed automation dashboard is wired into the app, but `Results Tracker` and `Model Eval` are still manual-first
 - Airflow DAG exists as a scaffold and has not yet been validated in a live Airflow runtime
 - no dedicated sharp-data vendor is integrated yet beyond ESPN-derived movement signals
+- login-protected odds capture is in progress for BetLotus-style flow but is not stable enough to be considered finished
 
 ## CI
 

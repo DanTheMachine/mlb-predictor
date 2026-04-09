@@ -30,11 +30,171 @@ The proxy listens on `http://localhost:8787`.
 npm run dev
 ```
 
+## Start The Automation API
+
+```bash
+npm run api
+```
+
+The frontend automation dashboard uses `VITE_AUTOMATION_API_BASE_URL`.
+
+Important:
+
+- `API_PORT` controls where the API listens
+- `VITE_AUTOMATION_API_BASE_URL` controls which API the React app calls
+- restart `npm run dev` after changing any `VITE_*` variable
+
 Recommended startup order:
 
 1. `npm run proxy`
-2. `npm run dev`
-3. Open the MLB predictor UI
+2. `npm run api`
+3. `npm run dev`
+4. Open the MLB predictor UI
+
+## Sandbox Database Workflow
+
+Use this when you want to test the API, CLI, and pipeline without writing to your main `mlb_predictor` database.
+
+1. create a separate Postgres database such as `mlb_sandbox`
+2. create `.env.sandbox`
+3. set sandbox-specific values:
+
+```env
+DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/mlb_sandbox?schema=public"
+API_PORT=8789
+VITE_AUTOMATION_API_BASE_URL=http://localhost:8789
+EXPORT_DIR="./generated-sandbox"
+```
+
+4. load `.env.sandbox` into the current PowerShell session:
+
+```powershell
+Get-Content .env.sandbox | ForEach-Object {
+  if ($_ -match '^\s*([^#=]+)=(.*)$') {
+    $name = $matches[1].Trim()
+    $value = $matches[2].Trim().Trim('"')
+    [System.Environment]::SetEnvironmentVariable($name, $value, 'Process')
+  }
+}
+```
+
+5. apply migrations to the sandbox database:
+
+```powershell
+npm.cmd run prisma:migrate:deploy
+```
+
+6. start the sandbox API:
+
+```powershell
+npm.cmd run api
+```
+
+7. start the sandbox frontend from the same loaded environment:
+
+```powershell
+npm.cmd run dev
+```
+
+8. run sandbox CLI commands from the same loaded environment:
+
+```powershell
+npm.cmd run cli -- run-daily-pipeline --date YYYY-MM-DD
+```
+
+Notes:
+
+- if the frontend was already running, restart it after loading `.env.sandbox`
+- if the API was already running, restart it after loading `.env.sandbox`
+- this keeps sandbox writes isolated to `mlb_sandbox`
+
+## Phase 1 Automation Workflow
+
+Phase 1 assumes:
+
+- Postgres is already installed and running
+- the proxy is running
+- you may optionally stage real odds overrides before prediction generation
+
+One-command daily pipeline:
+
+```bash
+npm run cli -- run-daily-pipeline --date YYYY-MM-DD
+```
+
+If you want to use staged odds overrides first:
+
+```bash
+npm run cli -- import-odds-overrides --date YYYY-MM-DD --file "C:\path\to\odds.txt" --source "manual-site-copy"
+```
+
+If you want to try browser-based capture from a login-protected site instead:
+
+```bash
+npm run cli -- capture-odds-overrides --date YYYY-MM-DD --source "playwright-site"
+```
+
+That command requires the `ODDS_CAPTURE_*` environment variables in `.env` to be configured for:
+
+- login URL
+- optional post-login odds page URL
+- username and password
+- username/password/submit selectors
+- content selector for the odds block you want to parse
+
+Review the staged overrides:
+
+```bash
+npm run cli -- list-odds-overrides --date YYYY-MM-DD
+```
+
+Approve them for pipeline use:
+
+```bash
+npm run cli -- approve-odds-overrides --date YYYY-MM-DD --source "manual-site-copy"
+```
+
+```bash
+npm run cli -- run-daily-pipeline --date YYYY-MM-DD --use-odds-overrides --override-source "manual-site-copy"
+```
+
+That pipeline currently does:
+
+1. refresh team stats
+2. load the day's slate
+3. load sharp information
+4. optionally replace fetched odds with stored odds overrides
+5. generate predictions
+6. write predictions to Postgres
+7. export predictions CSV
+8. ingest yesterday's results
+9. write results to Postgres
+10. export results CSV
+
+Only `approved` overrides are used by the pipeline.
+
+## Import Historical Predictions Into Postgres
+
+To import a historical predictions CSV or TSV into Postgres:
+
+```powershell
+npm.cmd run cli -- import-season-sheet --file "C:\path\to\predictions.csv"
+```
+
+Optional source label:
+
+```powershell
+npm.cmd run cli -- import-season-sheet --file "C:\path\to\predictions.csv" --source "my-import"
+```
+
+The import expects the historical sheet headers used by `server/services/historicalImport.ts`, including at least:
+
+- `Date`
+- `Away`
+- `Home`
+- `LookupKey`
+
+If the file also includes `Actual Home Score` and `Actual Away Score`, results are imported too.
 
 ## Cross-Platform Notes
 
@@ -84,6 +244,8 @@ Recommended startup order:
 - `Results` exports the previous day's completed MLB results using MLB `officialDate` for `Date` and `LookupKey`.
 - `Results` CSV column order is `Date, Home, Away, Home Score, Away Score, Winner, Total, LookupKey`.
 - `Predictions` exports `Away` and `Home` as `ABBR TeamName`.
+- `run-daily-pipeline` is the current Phase 1 backend automation entrypoint.
+- odds overrides can now be staged separately in Postgres before prediction generation.
 - `Results Tracker` now has its own import flow and no longer depends on `Model Eval`.
 - `Results Tracker` keeps `Predictions CSV` and `Results CSV` editors visible side by side.
 - `Odds live` counts both `ESPN live` and `Manual` odds.

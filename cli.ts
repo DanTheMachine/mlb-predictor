@@ -7,7 +7,16 @@ import {
   ingestResults,
   loadSlate,
   refreshTeamStats,
+  runDailyPipeline,
 } from './server/services/mlbAutomation.js'
+import { importHistoricalPredictionsSheet } from './server/services/historicalImport.js'
+import {
+  approveOddsOverrides,
+  importBulkOddsOverridesFromFile,
+  listOddsOverrides,
+  rejectOddsOverrides,
+} from './server/services/oddsOverrides.js'
+import { captureOddsOverrides } from './server/services/oddsCapture.js'
 
 // eslint-disable-next-line no-unused-vars
 type CommandHandler = (args: Record<string, string | boolean>) => Promise<unknown>
@@ -37,10 +46,22 @@ const commands: Record<string, CommandHandler> = {
     return refreshTeamStats(toStringArg(args.date))
   },
   async 'load-slate'(args) {
-    return loadSlate(toStringArg(args.date))
+    return loadSlate(toStringArg(args.date), {
+      useOddsOverrides: toBoolArg(args['use-odds-overrides']),
+      overrideSource: toStringArg(args['override-source']),
+    })
   },
   async 'run-predictions'(args) {
-    return generatePredictions(toStringArg(args.date))
+    return generatePredictions(toStringArg(args.date), {
+      useOddsOverrides: toBoolArg(args['use-odds-overrides']),
+      overrideSource: toStringArg(args['override-source']),
+    })
+  },
+  async 'run-daily-pipeline'(args) {
+    return runDailyPipeline(toStringArg(args.date), {
+      useOddsOverrides: toBoolArg(args['use-odds-overrides']),
+      overrideSource: toStringArg(args['override-source']),
+    })
   },
   async 'export-predictions-csv'(args) {
     return exportPredictionsCsv({
@@ -62,6 +83,52 @@ const commands: Record<string, CommandHandler> = {
   async 'list-runs'() {
     return getLatestRuns()
   },
+  async 'import-season-sheet'(args) {
+    const file = toStringArg(args.file)
+    if (!file) {
+      throw new Error('import-season-sheet requires --file PATH_TO_TSV_OR_CSV')
+    }
+
+    return importHistoricalPredictionsSheet({
+      file,
+      source: toStringArg(args.source),
+    })
+  },
+  async 'import-odds-overrides'(args) {
+    const file = toStringArg(args.file)
+    if (!file) {
+      throw new Error('import-odds-overrides requires --file PATH_TO_BULK_ODDS_TEXT')
+    }
+
+    return importBulkOddsOverridesFromFile({
+      date: toStringArg(args.date),
+      file,
+      source: toStringArg(args.source),
+    })
+  },
+  async 'list-odds-overrides'(args) {
+    return listOddsOverrides(toStringArg(args.date))
+  },
+  async 'capture-odds-overrides'(args) {
+    return captureOddsOverrides({
+      date: toStringArg(args.date),
+      source: toStringArg(args.source),
+    })
+  },
+  async 'approve-odds-overrides'(args) {
+    return approveOddsOverrides({
+      date: toStringArg(args.date),
+      source: toStringArg(args.source),
+      lookupKeys: toCsvArgs(args.lookupKeys),
+    })
+  },
+  async 'reject-odds-overrides'(args) {
+    return rejectOddsOverrides({
+      date: toStringArg(args.date),
+      source: toStringArg(args.source),
+      lookupKeys: toCsvArgs(args.lookupKeys),
+    })
+  },
 }
 
 async function main() {
@@ -73,13 +140,20 @@ async function main() {
       [
         'Available commands:',
         '  fetch-team-stats --date YYYY-MM-DD',
-        '  load-slate --date YYYY-MM-DD',
-        '  run-predictions --date YYYY-MM-DD',
+        '  load-slate --date YYYY-MM-DD [--use-odds-overrides] [--override-source LABEL]',
+        '  run-predictions --date YYYY-MM-DD [--use-odds-overrides] [--override-source LABEL]',
+        '  run-daily-pipeline --date YYYY-MM-DD [--use-odds-overrides] [--override-source LABEL]',
         '  export-predictions-csv --date YYYY-MM-DD [--runId RUN_ID]',
         '  ingest-results --date YYYY-MM-DD',
         '  export-results-csv --date YYYY-MM-DD',
         '  evaluate --from YYYY-MM-DD --to YYYY-MM-DD',
         '  list-runs',
+        '  import-season-sheet --file PATH [--source LABEL]',
+        '  import-odds-overrides --date YYYY-MM-DD --file PATH [--source LABEL]',
+        '  capture-odds-overrides --date YYYY-MM-DD [--source LABEL]',
+        '  list-odds-overrides --date YYYY-MM-DD',
+        '  approve-odds-overrides --date YYYY-MM-DD [--source LABEL] [--lookupKeys KEY1,KEY2]',
+        '  reject-odds-overrides --date YYYY-MM-DD [--source LABEL] [--lookupKeys KEY1,KEY2]',
       ].join('\n'),
     )
     process.exitCode = command === 'help' ? 0 : 1
@@ -97,6 +171,18 @@ async function main() {
 
 function toStringArg(value: string | boolean | undefined) {
   return typeof value === 'string' ? value : undefined
+}
+
+function toBoolArg(value: string | boolean | undefined) {
+  return value === true || value === 'true'
+}
+
+function toCsvArgs(value: string | boolean | undefined) {
+  if (typeof value !== 'string') return undefined
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
 }
 
 void main()
