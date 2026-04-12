@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 
 import type { TeamAbbr } from '../../src/lib/mlbTypes.js'
 import { assertDateInput, isDbConfigured } from '../config.js'
-import { findOrCreatePredictionRun, savePredictions, saveResults } from '../db/repositories.js'
+import { createPredictionFileRecord, createResultFileRecord, findOrCreatePredictionRun, savePredictions, saveResults } from '../db/repositories.js'
 import type { AutomationPredictionRow } from './mlbAutomation.js'
 
 const IMPORT_MODEL_VERSION = 'legacy-sheet-import-v1'
@@ -69,12 +69,32 @@ export async function importHistoricalPredictionsSheet(args: { file: string; sou
     })
 
     await savePredictions(run?.id ?? null, date, predictions)
+    await createPredictionFileRecord({
+      date,
+      path: args.file,
+      source,
+      fileRole: 'import',
+      runId: run?.id ?? null,
+      metadata: {
+        importedPredictionCount: predictions.length,
+      },
+    })
     runIds.push({ date, runId: run?.id ?? null })
     importedPredictionCount += predictions.length
 
     const results = dedupeResults(importedResultsByDate.get(date) ?? [])
     if (results.length) {
       await saveResults(date, results)
+      await createResultFileRecord({
+        date,
+        path: args.file,
+        source,
+        fileRole: 'import',
+        runId: run?.id ?? null,
+        metadata: {
+          importedResultCount: results.length,
+        },
+      })
       importedResultCount += results.length
     }
   }

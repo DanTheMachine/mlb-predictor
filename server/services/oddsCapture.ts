@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { chromium, type Frame, type Locator, type Page } from '@playwright/test'
 
+import { parseBulkOdds } from '../../src/lib/bulkOddsParser.js'
 import { appConfig, assertDateInput } from '../config.js'
 import { importBulkOddsOverrides } from './oddsOverrides.js'
 
@@ -79,7 +80,7 @@ export async function captureOddsOverrides(args?: { date?: string; source?: stri
 
     for (const selector of settings.navSelectors) {
       await closeModalIfPresent(page, settings.modalCloseSelector)
-      await clickWithModalFallback(page, await findLocator(page, selector), settings.modalCloseSelector)
+      await clickNavTarget(page, selector, settings.modalCloseSelector)
       if (appConfig.oddsCaptureStepDelayMs > 0) {
         await page.waitForTimeout(appConfig.oddsCaptureStepDelayMs)
       }
@@ -91,6 +92,8 @@ export async function captureOddsOverrides(args?: { date?: string; source?: stri
 
     const contentLocator = await findLocator(page, settings.contentSelector)
     const raw = await contentLocator.innerText()
+    const parsedGames = parseBulkOdds(raw)
+    const successArtifact = await saveSuccessfulCaptureArtifact(date, raw, parsedGames, page)
 
     const importResult = await importBulkOddsOverrides({
       date,
@@ -107,6 +110,10 @@ export async function captureOddsOverrides(args?: { date?: string; source?: stri
       provider: appConfig.oddsCaptureProvider,
       headless: appConfig.oddsCaptureHeadless,
       contentLength: raw.length,
+      rawCapturePath: successArtifact.rawPath,
+      parsedCapturePath: successArtifact.parsedPath,
+      rawCapturePreview: buildRawPreview(raw),
+      parsedMatchups: parsedGames.map((game) => `${game.awayAbbr} at ${game.homeAbbr}`),
     }
   } catch (error) {
     await saveDebugArtifacts(date, error, browser)
@@ -168,9 +175,9 @@ async function gotoWithFallback(page: Page, url: string) {
   await waitForAppShell(page)
 }
 
-async function findLocator(page: Page, selector: string, targetFrame?: Frame | null): Promise<Locator> {
+async function findLocator(page: Page, selector: string, targetFrame?: Frame | null, timeoutMs = appConfig.oddsCaptureTimeoutMs): Promise<Locator> {
   const normalized = selector.startsWith('//') || selector.startsWith('(') ? `xpath=${selector}` : selector
-  const deadline = Date.now() + appConfig.oddsCaptureTimeoutMs
+  const deadline = Date.now() + timeoutMs
 
   while (Date.now() < deadline) {
     const frames = targetFrame ? [targetFrame] : page.frames()
@@ -184,6 +191,55 @@ async function findLocator(page: Page, selector: string, targetFrame?: Frame | n
   }
 
   throw new Error(`Timed out locating selector: ${selector}`)
+}
+
+async function findNavLocator(page: Page, selector: string) {
+  try {
+    return await findVisibleLocator(page, selector, Math.min(5000, appConfig.oddsCaptureTimeoutMs))
+  } catch (error) {
+    const fallbacks = getNavFallbackSelectors(selector)
+    for (const fallback of fallbacks) {
+      try {
+        return await findVisibleLocator(page, fallback, Math.min(5000, appConfig.oddsCaptureTimeoutMs))
+      } catch {
+        // Try the next known fallback for the current sportsbook layout.
+      }
+    }
+
+    const permissiveSelectors = [selector, ...fallbacks]
+    for (const permissiveSelector of permissiveSelectors) {
+      try {
+        return await findLocator(page, permissiveSelector, undefined, Math.min(5000, appConfig.oddsCaptureTimeoutMs))
+      } catch {
+        // Fall through to the original error.
+      }
+    }
+
+    throw error instanceof Error ? error : new Error(`Timed out locating selector: ${selector}`)
+  }
+}
+
+async function findVisibleLocator(page: Page, selector: string, timeoutMs: number) {
+  const locator = await findLocator(page, selector, undefined, timeoutMs)
+  if (await locator.isVisible().catch(() => false)) {
+    return locator
+  }
+
+  throw new Error(`Located selector but it was not visible: ${selector}`)
+}
+
+function getNavFallbackSelectors(selector: string) {
+  const normalized = selector.toUpperCase()
+
+  if (normalized.includes('MLB')) {
+    return [
+      `//ul[@id='mobile-popular']//a[.//p[normalize-space(text())='MLB']]`,
+      `//ul[@id='uSportListUL']//a[contains(normalize-space(text()),'Baseball - MLB - Games')]`,
+      `//li[contains(@class,'sub-menu')][.//b[normalize-space(text())='MLB']]//a[normalize-space(text())='Games']`,
+    ]
+  }
+
+  return []
 }
 
 async function findFrame(page: Page, selector: string) {
@@ -255,6 +311,25 @@ async function clickWithModalFallback(page: Page, locator: Locator, modalSelecto
     await closeModalIfPresent(page, modalSelector)
     await locator.click({ force: true })
   }
+}
+
+async function clickNavTarget(page: Page, selector: string, modalSelector: string | null) {
+  const locator = await findNavLocator(page, selector)
+  const visible = await locator.isVisible().catch(() => false)
+  if (visible) {
+    await clickWithModalFallback(page, locator, modalSelector)
+    return
+  }
+
+  const href = await locator.getAttribute('href')
+  if (href?.startsWith('javascript:')) {
+    await page.evaluate((script) => {
+      ;(0, eval)(script)
+    }, href.slice('javascript:'.length))
+    return
+  }
+
+  await clickWithModalFallback(page, locator, modalSelector)
 }
 
 async function typeIntoField(locator: Locator, value: string) {
@@ -339,7 +414,7 @@ async function waitForPostLoginTransition(page: Page, timeoutMs: number) {
 
 async function saveDebugArtifacts(date: string, error: unknown, browser: Awaited<ReturnType<typeof chromium.launch>>) {
   try {
-    const debugDir = path.resolve(appConfig.exportDir, 'odds-capture-debug')
+    const debugDir = getOddsCaptureDebugDir()
     await mkdir(debugDir, { recursive: true })
 
     const context = browser.contexts()[0]
@@ -365,4 +440,42 @@ async function saveDebugArtifacts(date: string, error: unknown, browser: Awaited
   } catch {
     // Best-effort debug capture only.
   }
+}
+
+async function saveSuccessfulCaptureArtifact(
+  date: string,
+  raw: string,
+  parsedGames: ReturnType<typeof parseBulkOdds>,
+  page: Page,
+) {
+  const debugDir = getOddsCaptureDebugDir()
+  await mkdir(debugDir, { recursive: true })
+
+  const stamp = `${date}-${Date.now()}`
+  const rawPath = path.join(debugDir, `${stamp}-raw.txt`)
+  const parsedPath = path.join(debugDir, `${stamp}-parsed.json`)
+  const metaPath = path.join(debugDir, `${stamp}-meta.txt`)
+
+  await writeFile(rawPath, raw, 'utf8')
+  await writeFile(parsedPath, JSON.stringify(parsedGames, null, 2), 'utf8')
+  await writeFile(
+    metaPath,
+    [
+      `url=${page.url()}`,
+      `capturedAt=${new Date().toISOString()}`,
+      `contentLength=${raw.length}`,
+      `parsedGames=${parsedGames.length}`,
+    ].join('\n'),
+    'utf8',
+  )
+
+  return { rawPath, parsedPath, metaPath }
+}
+
+function buildRawPreview(raw: string) {
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 2000)
+}
+
+function getOddsCaptureDebugDir() {
+  return path.resolve(appConfig.exportDir, 'odds-capture-debug')
 }

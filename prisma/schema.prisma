@@ -7,7 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model TeamStatSnapshot {
+enum Sport {
+  MLB
+  NBA
+  NHL
+  NCAAM
+  NFL
+  NCAAF
+}
+
+model MlbTeamStatSnapshot {
   id           String   @id @default(cuid())
   businessDate DateTime
   sourceSeason Int
@@ -16,9 +25,10 @@ model TeamStatSnapshot {
   createdAt    DateTime @default(now())
 
   @@unique([businessDate, sourceSeason])
+  @@map("TeamStatSnapshot")
 }
 
-model SlateGame {
+model MlbSlateGame {
   id           String   @id @default(cuid())
   businessDate DateTime
   lookupKey    String
@@ -32,9 +42,10 @@ model SlateGame {
   updatedAt    DateTime @updatedAt
 
   @@unique([businessDate, lookupKey])
+  @@map("SlateGame")
 }
 
-model MarketOddsSnapshot {
+model MlbMarketOddsSnapshot {
   id           String   @id @default(cuid())
   businessDate DateTime
   lookupKey    String
@@ -43,10 +54,12 @@ model MarketOddsSnapshot {
   createdAt    DateTime @default(now())
 
   @@unique([businessDate, lookupKey, source])
+  @@map("MarketOddsSnapshot")
 }
 
-model OddsOverride {
+model MlbOddsOverride {
   id           String   @id @default(cuid())
+  sport        Sport    @default(MLB)
   businessDate DateTime
   lookupKey    String
   awayTeam     String
@@ -58,11 +71,12 @@ model OddsOverride {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  @@unique([businessDate, lookupKey, source])
-  @@index([businessDate, status])
+  @@unique([sport, businessDate, lookupKey, source])
+  @@index([sport, businessDate, status])
+  @@map("OddsOverride")
 }
 
-model SharpSignalRaw {
+model MlbSharpSignalRaw {
   id           String   @id @default(cuid())
   businessDate DateTime
   lookupKey    String
@@ -71,9 +85,10 @@ model SharpSignalRaw {
   fetchedAt    DateTime @default(now())
 
   @@unique([businessDate, lookupKey, provider])
+  @@map("SharpSignalRaw")
 }
 
-model SharpSignalNormalized {
+model MlbSharpSignalNormalized {
   id                     String   @id @default(cuid())
   businessDate           DateTime
   lookupKey              String
@@ -94,10 +109,12 @@ model SharpSignalNormalized {
   updatedAt              DateTime @updatedAt
 
   @@unique([businessDate, lookupKey, provider])
+  @@map("SharpSignalNormalized")
 }
 
 model PredictionRun {
   id            String       @id @default(cuid())
+  sport         Sport        @default(MLB)
   businessDate  DateTime
   modelVersion  String
   reviewStatus  String       @default("pending_review")
@@ -107,12 +124,14 @@ model PredictionRun {
   summary       Json
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
-  predictions   Prediction[]
+  mlbPredictions MlbPrediction[]
+  predictionFiles PredictionFile[]
+  resultFiles     ResultFile[]
 
-  @@index([businessDate, createdAt(sort: Desc)])
+  @@index([sport, businessDate, createdAt(sort: Desc)])
 }
 
-model Prediction {
+model MlbPrediction {
   id              String        @id @default(cuid())
   predictionRunId String
   businessDate    DateTime
@@ -125,9 +144,10 @@ model Prediction {
 
   @@unique([predictionRunId, lookupKey])
   @@index([businessDate, lookupKey])
+  @@map("Prediction")
 }
 
-model GameResult {
+model MlbGameResult {
   id           String   @id @default(cuid())
   businessDate DateTime
   lookupKey    String
@@ -140,10 +160,12 @@ model GameResult {
   updatedAt    DateTime @updatedAt
 
   @@unique([businessDate, lookupKey])
+  @@map("GameResult")
 }
 
 model EvaluationSummary {
   id           String   @id @default(cuid())
+  sport        Sport    @default(MLB)
   fromDate     DateTime
   toDate       DateTime
   modelVersion String?
@@ -154,17 +176,51 @@ model EvaluationSummary {
 
 model ModelVersion {
   id          String   @id @default(cuid())
-  version     String   @unique
+  sport       Sport    @default(MLB)
+  version     String
   description String?
   parameters  Json
   status      String   @default("active")
   createdAt   DateTime @default(now())
+
+  @@unique([sport, version])
 }
 
 model CalibrationRun {
   id           String   @id @default(cuid())
+  sport        Sport    @default(MLB)
   modelVersion String?
   status       String   @default("planned")
   output       Json
   createdAt    DateTime @default(now())
+}
+
+model PredictionFile {
+  id              String        @id @default(cuid())
+  sport           Sport
+  businessDate    DateTime
+  source          String
+  path            String
+  fileRole        String        @default("export")
+  metadata        Json?
+  predictionRunId String?
+  createdAt       DateTime      @default(now())
+  predictionRun   PredictionRun? @relation(fields: [predictionRunId], references: [id], onDelete: SetNull)
+
+  @@index([sport, businessDate, createdAt(sort: Desc)])
+}
+
+model ResultFile {
+  id              String        @id @default(cuid())
+  sport           Sport
+  businessDate    DateTime
+  source          String
+  path            String
+  fileRole        String        @default("export")
+  metadata        Json?
+  predictionRunId String?
+  createdAt       DateTime      @default(now())
+  predictionRun   PredictionRun? @relation(fields: [predictionRunId], references: [id], onDelete: SetNull)
+
+  @@index([sport, businessDate, createdAt(sort: Desc)])
 }

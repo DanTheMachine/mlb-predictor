@@ -143,4 +143,55 @@ U 8 ½
       },
     ])
   })
+
+  it('parses noisy browser-style capture text with inline tokens', () => {
+    const raw = `
+MLB Odds Board
+ATLANTA BRAVES 901 + 1.5 - 170 O 8.5 - 108 - 135 LOS ANGELES DODGERS 902 - 1.5 + 145 U 8.5 - 112 + 122
+`
+
+    expect(parseBulkOdds(raw)).toEqual([
+      {
+        awayAbbr: 'ATL',
+        homeAbbr: 'LAD',
+        odds: {
+          source: 'manual',
+          awayMoneyline: -135,
+          homeMoneyline: 122,
+          runLine: -1.5,
+          runLineAwayOdds: -170,
+          runLineHomeOdds: 145,
+          overUnder: 8.5,
+          overOdds: -108,
+          underOdds: -112,
+        },
+      },
+    ])
+  })
+
+  it('ignores extra labels between teams and market tokens', () => {
+    const raw = `
+Michael McGreevy/Miles Mikolas: CATV | NATV 1:05 PM
+ST. LOUIS CARDINALS rotation 955 run line - 1 1/2 price + 140 total O 8 1/2 over EVEN ml - 115
+WASHINGTON NATIONALS rotation 956 run line + 1 1/2 price - 150 total U 8 1/2 under - 110 ml + 105
+`
+
+    expect(parseBulkOdds(raw)).toEqual([
+      {
+        awayAbbr: 'STL',
+        homeAbbr: 'WSH',
+        odds: {
+          source: 'manual',
+          awayMoneyline: -115,
+          homeMoneyline: 105,
+          runLine: 1.5,
+          runLineAwayOdds: 140,
+          runLineHomeOdds: -150,
+          overUnder: 8.5,
+          overOdds: 100,
+          underOdds: -110,
+        },
+      },
+    ])
+  })
 })

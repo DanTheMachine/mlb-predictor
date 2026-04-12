@@ -60,6 +60,8 @@ Current status:
 
 - standalone/manual predictor mode remains fully supported
 - automation foundation is implemented
+- the persistence layer now has a shared multi-sport foundation
+- current MLB records now sit on top of sport-aware runs/file metadata plus MLB-specific detail tables
 - local Postgres setup plus Prisma migration is the next required step for persistent automation history
 - React `Automation` tab can consume the API when available
 
@@ -114,6 +116,14 @@ Apply migrations against your Postgres instance:
 ```bash
 npm run prisma:migrate:dev
 ```
+
+The latest schema also introduces:
+
+- shared `sport`-aware `PredictionRun` metadata
+- shared `PredictionFile` and `ResultFile` tables
+- MLB-specific Prisma models for predictions, results, odds overrides, slate rows, and sharp snapshots
+
+This keeps current MLB behavior intact while making room for future `NBA`, `NHL`, `NCAAM`, `NFL`, and `NCAAF` tables.
 
 ### Sandbox Workflow
 

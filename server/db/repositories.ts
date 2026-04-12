@@ -13,11 +13,13 @@ function toJson(value: unknown) {
   return value as Prisma.InputJsonValue
 }
 
+const DEFAULT_SPORT = 'MLB' as const
+
 export async function saveTeamStatSnapshot(date: string, snapshot: TeamRatingsSnapshot) {
   const prisma = getPrismaClient()
   if (!prisma) return null
 
-  return prisma.teamStatSnapshot.upsert({
+  return prisma.mlbTeamStatSnapshot.upsert({
     where: {
       businessDate_sourceSeason: {
         businessDate: toBusinessDate(date),
@@ -44,7 +46,7 @@ export async function saveSlateRows(date: string, rows: ScheduleRow[]) {
   await Promise.all(
     rows.map((row) => {
       const lookupKey = `${date.replaceAll('-', '')}${row.game.homeTeam}${row.game.awayTeam}`
-      return prisma.slateGame.upsert({
+      return prisma.mlbSlateGame.upsert({
         where: {
           businessDate_lookupKey: {
             businessDate: toBusinessDate(date),
@@ -77,7 +79,7 @@ export async function saveSlateRows(date: string, rows: ScheduleRow[]) {
 }
 
 function saveNormalizedSharp(prisma: NonNullable<ReturnType<typeof getPrismaClient>>, date: string, lookupKey: string, input: SharpSignalInput) {
-  return prisma.sharpSignalNormalized.upsert({
+  return prisma.mlbSharpSignalNormalized.upsert({
     where: {
       businessDate_lookupKey_provider: {
         businessDate: toBusinessDate(date),
@@ -127,7 +129,7 @@ export async function saveOddsAndSharp(date: string, rows: ScheduleRow[]) {
     rows.flatMap((row) => {
       const lookupKey = `${date.replaceAll('-', '')}${row.game.homeTeam}${row.game.awayTeam}`
       const writes: Promise<unknown>[] = [
-        prisma.marketOddsSnapshot.upsert({
+        prisma.mlbMarketOddsSnapshot.upsert({
           where: {
             businessDate_lookupKey_source: {
               businessDate: toBusinessDate(date),
@@ -149,7 +151,7 @@ export async function saveOddsAndSharp(date: string, rows: ScheduleRow[]) {
 
       if (row.sharpInput) {
         writes.push(
-          prisma.sharpSignalRaw.upsert({
+          prisma.mlbSharpSignalRaw.upsert({
             where: {
               businessDate_lookupKey_provider: {
                 businessDate: toBusinessDate(date),
@@ -197,9 +199,10 @@ export async function saveOddsOverrides(
 
   await Promise.all(
     rows.map((row) =>
-      prisma.oddsOverride.upsert({
+      prisma.mlbOddsOverride.upsert({
         where: {
-          businessDate_lookupKey_source: {
+          sport_businessDate_lookupKey_source: {
+            sport: DEFAULT_SPORT,
             businessDate: toBusinessDate(date),
             lookupKey: row.lookupKey,
             source: row.source,
@@ -213,6 +216,7 @@ export async function saveOddsOverrides(
           metadata: row.metadata ? toJson(row.metadata) : Prisma.JsonNull,
         },
         create: {
+          sport: DEFAULT_SPORT,
           businessDate: toBusinessDate(date),
           lookupKey: row.lookupKey,
           awayTeam: row.awayTeam,
@@ -233,8 +237,9 @@ export async function listOddsOverridesByDate(date: string) {
   const prisma = getPrismaClient()
   if (!prisma) return []
 
-  return prisma.oddsOverride.findMany({
+  return prisma.mlbOddsOverride.findMany({
     where: {
+      sport: DEFAULT_SPORT,
       businessDate: toBusinessDate(date),
     },
     orderBy: [{ updatedAt: 'desc' }, { lookupKey: 'asc' }],
@@ -251,8 +256,9 @@ export async function getOddsOverridesForDate(
   const prisma = getPrismaClient()
   if (!prisma) return []
 
-  return prisma.oddsOverride.findMany({
+  return prisma.mlbOddsOverride.findMany({
     where: {
+      sport: DEFAULT_SPORT,
       businessDate: toBusinessDate(date),
       source: args?.source,
       status: args?.statuses?.length ? { in: args.statuses } : undefined,
@@ -270,8 +276,9 @@ export async function updateOddsOverrideStatus(args: {
   const prisma = getPrismaClient()
   if (!prisma) return { count: 0 }
 
-  return prisma.oddsOverride.updateMany({
+  return prisma.mlbOddsOverride.updateMany({
     where: {
+      sport: DEFAULT_SPORT,
       businessDate: toBusinessDate(args.date),
       source: args.source,
       lookupKey: args.lookupKeys?.length ? { in: args.lookupKeys } : undefined,
@@ -288,6 +295,7 @@ export async function createPredictionRun(date: string, modelVersion: string, su
 
   return prisma.predictionRun.create({
     data: {
+      sport: DEFAULT_SPORT,
       businessDate: toBusinessDate(date),
       modelVersion,
       summary: toJson(summary),
@@ -301,6 +309,7 @@ export async function findOrCreatePredictionRun(date: string, modelVersion: stri
 
   const existing = await prisma.predictionRun.findFirst({
     where: {
+      sport: DEFAULT_SPORT,
       businessDate: toBusinessDate(date),
       modelVersion,
     },
@@ -327,7 +336,7 @@ export async function savePredictions(runId: string | null, date: string, rows: 
 
   await Promise.all(
     rows.map((row) =>
-      prisma.prediction.upsert({
+      prisma.mlbPrediction.upsert({
         where: {
           predictionRunId_lookupKey: {
             predictionRunId: runId,
@@ -370,7 +379,7 @@ export async function saveResults(date: string, rows: GradingResultRow[]) {
 
   await Promise.all(
     rows.map((row) =>
-      prisma.gameResult.upsert({
+      prisma.mlbGameResult.upsert({
         where: {
           businessDate_lookupKey: {
             businessDate: toBusinessDate(date),
@@ -405,6 +414,9 @@ export async function listPredictionRuns(limit = 10) {
   if (!prisma) return []
 
   return prisma.predictionRun.findMany({
+    where: {
+      sport: DEFAULT_SPORT,
+    },
     orderBy: [{ businessDate: 'desc' }, { createdAt: 'desc' }],
     take: limit,
   })
@@ -415,14 +427,14 @@ export async function getPredictionsByRunOrDate(args: { runId?: string; date?: s
   if (!prisma) return []
 
   if (args.runId) {
-    return prisma.prediction.findMany({
+    return prisma.mlbPrediction.findMany({
       where: { predictionRunId: args.runId },
       orderBy: { lookupKey: 'asc' },
     })
   }
 
   if (args.date) {
-    return prisma.prediction.findMany({
+    return prisma.mlbPrediction.findMany({
       where: { businessDate: toBusinessDate(args.date) },
       orderBy: { lookupKey: 'asc' },
     })
@@ -435,7 +447,7 @@ export async function getPredictionsByDateRange(fromDate: string, toDate: string
   const prisma = getPrismaClient()
   if (!prisma) return []
 
-  return prisma.prediction.findMany({
+  return prisma.mlbPrediction.findMany({
     where: {
       businessDate: {
         gte: toBusinessDate(fromDate),
@@ -450,7 +462,7 @@ export async function getResultsByDateRange(fromDate: string, toDate: string) {
   const prisma = getPrismaClient()
   if (!prisma) return []
 
-  return prisma.gameResult.findMany({
+  return prisma.mlbGameResult.findMany({
     where: {
       businessDate: {
         gte: toBusinessDate(fromDate),
@@ -467,11 +479,60 @@ export async function saveEvaluationSummary(fromDate: string, toDate: string, th
 
   return prisma.evaluationSummary.create({
     data: {
+      sport: DEFAULT_SPORT,
       fromDate: toBusinessDate(fromDate),
       toDate: toBusinessDate(toDate),
       modelVersion,
       thresholds: toJson(thresholds),
       summary: toJson(summary),
+    },
+  })
+}
+
+export async function createPredictionFileRecord(args: {
+  date: string
+  path: string
+  source: string
+  fileRole?: string
+  runId?: string | null
+  metadata?: Record<string, unknown> | null
+}) {
+  const prisma = getPrismaClient()
+  if (!prisma) return null
+
+  return prisma.predictionFile.create({
+    data: {
+      sport: DEFAULT_SPORT,
+      businessDate: toBusinessDate(args.date),
+      source: args.source,
+      path: args.path,
+      fileRole: args.fileRole ?? 'export',
+      predictionRunId: args.runId ?? undefined,
+      metadata: args.metadata ? toJson(args.metadata) : undefined,
+    },
+  })
+}
+
+export async function createResultFileRecord(args: {
+  date: string
+  path: string
+  source: string
+  fileRole?: string
+  runId?: string | null
+  metadata?: Record<string, unknown> | null
+}) {
+  const prisma = getPrismaClient()
+  if (!prisma) return null
+
+  return prisma.resultFile.create({
+    data: {
+      sport: DEFAULT_SPORT,
+      businessDate: toBusinessDate(args.date),
+      source: args.source,
+      path: args.path,
+      fileRole: args.fileRole ?? 'export',
+      predictionRunId: args.runId ?? undefined,
+      metadata: args.metadata ? toJson(args.metadata) : undefined,
     },
   })
 }

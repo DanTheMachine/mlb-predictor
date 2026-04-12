@@ -79,3 +79,29 @@ Future automation candidate after the pipeline is stable:
 - The frontend automation client now reads `VITE_AUTOMATION_API_BASE_URL` instead of a hardcoded API URL.
 - Sandbox testing is supported with `.env.sandbox`, a separate Postgres database, and a separate API port.
 - The login-based odds capture worker exists, but the live site flow still needs stabilization before Phase 2 can be considered complete.
+- The persistence layer now has a shared multi-sport foundation:
+  - sport-aware `PredictionRun`
+  - shared `PredictionFile` / `ResultFile`
+  - MLB-specific detail models ready to coexist with future `NBA`, `NHL`, `NCAAM`, `NFL`, and `NCAAF` tables.
+
+## Manual CLI Validation Sequence
+
+Use this sequence when manually validating the automation pipeline against the UI for a given slate date. The `2026-04-11` date below is an example and can be swapped for a different slate date.
+
+```powershell
+npm.cmd run cli -- fetch-team-stats --date 2026-04-11
+npm.cmd run cli -- capture-odds-overrides --date 2026-04-11 --source betlotus-mlb
+npm.cmd run cli -- approve-odds-overrides --date 2026-04-11 --source betlotus-mlb
+npm.cmd run cli -- load-slate --date 2026-04-11 --use-odds-overrides --override-source betlotus-mlb
+npm.cmd run cli -- run-predictions --date 2026-04-11 --use-odds-overrides --override-source betlotus-mlb
+npm.cmd run cli -- export-predictions-csv --date 2026-04-11
+```
+
+Expected intent of each step:
+
+- `fetch-team-stats` mirrors `Fetch MLB Data`
+- `capture-odds-overrides` runs the Playwright sportsbook scrape and stages overrides
+- `approve-odds-overrides` promotes the staged sportsbook lines so the pipeline can use them
+- `load-slate --use-odds-overrides` mirrors `Load Games` with approved overrides applied
+- `run-predictions --use-odds-overrides` mirrors `Run All Sims`
+- `export-predictions-csv` writes the automation-side predictions export for UI comparison

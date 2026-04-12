@@ -19,6 +19,7 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
   - lightweight API in `api.ts`
   - Prisma schema and migration scaffold in `prisma/`
   - Airflow DAG scaffold in `airflow/dags/`
+  - persistence layer now includes shared multi-sport metadata plus MLB-specific detail models
 - built-in blended default team ratings
 - daily schedule cards support:
   - probable starters
@@ -102,12 +103,33 @@ This folder contains the working MLB predictor app for the `game_sims` workspace
 - current fallback behavior:
   - if `DATABASE_URL` is absent, CLI and API stay usable in non-persistent fallback mode
   - the React app manual predictor workflow still works without Postgres or Airflow
+- the schema now uses:
+  - shared sport-aware `PredictionRun` rows
+  - shared `PredictionFile` / `ResultFile` audit tables
+  - MLB-specific Prisma models mapped onto the current MLB prediction/result/odds tables
 - next required infrastructure step:
   - set up a local Postgres instance
   - copy `.env.example` to `.env`
   - populate `DATABASE_URL`
   - run Prisma migrations
 - sandbox workflow is supported by loading `.env.sandbox` before starting Prisma, CLI, API, or Vite
+
+Current manual CLI validation sequence for UI comparison:
+
+```powershell
+npm.cmd run cli -- fetch-team-stats --date 2026-04-11
+npm.cmd run cli -- capture-odds-overrides --date 2026-04-11 --source betlotus-mlb
+npm.cmd run cli -- approve-odds-overrides --date 2026-04-11 --source betlotus-mlb
+npm.cmd run cli -- load-slate --date 2026-04-11 --use-odds-overrides --override-source betlotus-mlb
+npm.cmd run cli -- run-predictions --date 2026-04-11 --use-odds-overrides --override-source betlotus-mlb
+npm.cmd run cli -- export-predictions-csv --date 2026-04-11
+```
+
+Important behavior:
+
+- `run-predictions` uses only `approved` overrides when override mode is enabled
+- the exported file should be compared against the Predictor tab output for the same slate date and odds source
+- the specific example date can be swapped for any target slate date
 
 ## Secrets / Config
 

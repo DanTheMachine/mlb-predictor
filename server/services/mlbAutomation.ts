@@ -9,7 +9,9 @@ import { DEFAULT_THRESHOLDS, evaluatePredictions, type ParsedPredictionRow, type
 import type { LineupConfidence, ScheduleRow, TeamAbbr } from '../../src/lib/mlbTypes.js'
 import { appConfig, assertDateInput, isDbConfigured, subtractOneDay } from '../config.js'
 import {
+  createPredictionFileRecord,
   createPredictionRun,
+  createResultFileRecord,
   getOddsOverridesForDate,
   getPredictionsByDateRange,
   getPredictionsByRunOrDate,
@@ -228,6 +230,16 @@ export async function exportPredictionsCsv(args: { date?: string; runId?: string
   if (args.runId) {
     await updatePredictionRunExports(args.runId, { exportPath: outputPath })
   }
+  await createPredictionFileRecord({
+    date: fileDate,
+    path: outputPath,
+    source: 'automation-export',
+    fileRole: 'export',
+    runId: args.runId ?? null,
+    metadata: {
+      rowCount: rows.length,
+    },
+  })
 
   return {
     path: outputPath,
@@ -258,6 +270,15 @@ export async function exportResultsCsv(dateInput?: string) {
   const outputPath = path.resolve(appConfig.exportDir, `mlb-results-${date}.csv`)
   await ensureExportDir()
   await writeFile(outputPath, csv, 'utf8')
+  await createResultFileRecord({
+    date,
+    path: outputPath,
+    source: 'automation-export',
+    fileRole: 'export',
+    metadata: {
+      rowCount: rows.length,
+    },
+  })
   return {
     path: outputPath,
     csv,
