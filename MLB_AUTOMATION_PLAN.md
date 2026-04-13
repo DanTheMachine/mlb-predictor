@@ -88,6 +88,7 @@ Future automation candidate after the pipeline is stable:
 
 Use this sequence when manually validating the automation pipeline against the UI for a given slate date. The `2026-04-11` date below is an example and can be swapped for a different slate date.
 
+**Windows (PowerShell):**
 ```powershell
 npm.cmd run cli -- fetch-team-stats --date 2026-04-11
 npm.cmd run cli -- capture-odds-overrides --date 2026-04-11 --source betlotus-mlb
@@ -95,6 +96,16 @@ npm.cmd run cli -- approve-odds-overrides --date 2026-04-11 --source betlotus-ml
 npm.cmd run cli -- load-slate --date 2026-04-11 --use-odds-overrides --override-source betlotus-mlb
 npm.cmd run cli -- run-predictions --date 2026-04-11 --use-odds-overrides --override-source betlotus-mlb
 npm.cmd run cli -- export-predictions-csv --date 2026-04-11
+```
+
+**macOS / Linux:**
+```bash
+npm run cli -- fetch-team-stats --date 2026-04-11
+npm run cli -- capture-odds-overrides --date 2026-04-11 --source betlotus-mlb
+npm run cli -- approve-odds-overrides --date 2026-04-11 --source betlotus-mlb
+npm run cli -- load-slate --date 2026-04-11 --use-odds-overrides --override-source betlotus-mlb
+npm run cli -- run-predictions --date 2026-04-11 --use-odds-overrides --override-source betlotus-mlb
+npm run cli -- export-predictions-csv --date 2026-04-11
 ```
 
 Expected intent of each step:

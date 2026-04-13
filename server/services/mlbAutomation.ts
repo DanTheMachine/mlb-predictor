@@ -336,7 +336,20 @@ export async function getStoredResults(from: string, to: string) {
 
 async function readPredictionRows(args: { runId?: string; date?: string }) {
   const records = await getPredictionsByRunOrDate(args)
-  return records.map((record) => record.payload as unknown as AutomationPredictionRow)
+  const rows = records.map((record) => record.payload as unknown as AutomationPredictionRow)
+  return rows.sort((a, b) => parseGameTime(a.gameTime) - parseGameTime(b.gameTime))
+}
+
+function parseGameTime(gameTime: string): number {
+  // Parses "10:05 AM" / "6:40 PM" into a sortable number (minutes since midnight)
+  const match = gameTime.match(/(\d+):(\d+)\s*(AM|PM)/i)
+  if (!match || !match[1] || !match[2] || !match[3]) return 0
+  let hours = parseInt(match[1], 10)
+  const minutes = parseInt(match[2], 10)
+  const meridiem = match[3].toUpperCase()
+  if (meridiem === 'PM' && hours !== 12) hours += 12
+  if (meridiem === 'AM' && hours === 12) hours = 0
+  return hours * 60 + minutes
 }
 
 async function ensureExportDir() {

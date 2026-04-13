@@ -4,6 +4,8 @@ import { analyzeBetting } from '../lib/betting'
 import { parseBulkOdds } from '../lib/bulkOddsParser'
 import { buildCompositeRecommendation, buildCompositeRecommendations } from '../lib/compositeRecommendation'
 import { fetchCompletedGameResults, fetchLiveScheduleRows } from '../lib/mlbApi'
+import { fetchStoredPredictions } from '../lib/automationApi'
+import type { StoredPredictionRow } from '../lib/automationApi'
 import {
   createDefaultBullpenWorkload,
   getDefaultStarter,
@@ -199,7 +201,7 @@ export function ScheduleAnalysis({
     setBulkStatusTone('success')
   }
 
-  const exportPredictionsCsv = () => {
+  const exportPredictionsCsv = async () => {
     const exportDate = liveDate
     const header = [
       'Date',
@@ -240,10 +242,14 @@ export function ScheduleAnalysis({
       'CompositeReasons',
       'LookupKey',
     ]
-    const lines = enrichedRows
+
+    // Build rows from UI state (simmed games currently loaded)
+    const uiLines = enrichedRows
       .filter((entry) => entry.row.result)
-      .map(({ row, analysis, composite }) =>
-        [
+      .map(({ row, analysis, composite }) => ({
+        gameTime: row.game.gameTime,
+        lookupKey: lookupKey(exportDate, row.game.homeTeam, row.game.awayTeam),
+        line: [
           exportDate,
           row.game.gameTime,
           exportTeamLabel(row.game.awayTeam, teams),
@@ -272,9 +278,9 @@ export function ScheduleAnalysis({
           String(row.odds.underOdds),
           row.awayLineupConfidence,
           row.homeLineupConfidence,
-          freshnessLabel(row.starterLastUpdated),
-          freshnessLabel(row.weatherLastUpdated),
-          freshnessLabel(row.sharpInput?.lastUpdated),
+          row.starterLastUpdated ?? 'Unknown',
+          row.weatherLastUpdated ?? 'Unknown',
+          row.sharpInput?.lastUpdated ?? 'Unknown',
           composite?.primaryMarket ?? 'PASS',
           composite?.pick ?? 'PASS',
           composite?.score.toFixed(1) ?? '0.0',
@@ -282,8 +288,78 @@ export function ScheduleAnalysis({
           composite?.reasons.join(' | ') ?? '',
           lookupKey(exportDate, row.game.homeTeam, row.game.awayTeam),
         ].map(csvEscape).join(','),
-      )
-    const csv = [header.map(csvEscape).join(','), ...lines].join('\n')
+      }))
+
+    // Supplement with DB predictions for games not loaded in the UI (e.g. already-started games)
+    const uiLookupKeys = new Set(uiLines.map((r) => r.lookupKey))
+    let dbLines: Array<{ gameTime: string; lookupKey: string; line: string }> = []
+    try {
+      const stored = await fetchStoredPredictions(exportDate)
+      dbLines = stored
+        .filter((r) => !uiLookupKeys.has(r.lookupKey))
+        .map((r: StoredPredictionRow) => ({
+          gameTime: r.gameTime,
+          lookupKey: r.lookupKey,
+          line: [
+            r.date,
+            r.gameTime,
+            exportTeamLabel(r.awayTeam as TeamAbbr, teams),
+            exportTeamLabel(r.homeTeam as TeamAbbr, teams),
+            r.awayStarter,
+            r.homeStarter,
+            r.awayRuns.toFixed(2),
+            r.homeRuns.toFixed(2),
+            r.total.toFixed(2),
+            r.margin.toFixed(2),
+            (r.homeWinProb * 100).toFixed(1),
+            (r.awayWinProb * 100).toFixed(1),
+            r.moneylineRec,
+            r.moneylineEdgePct.toFixed(1),
+            r.runLineRec,
+            r.runLineEdgePct.toFixed(1),
+            r.totalRec,
+            r.totalEdgePct.toFixed(1),
+            r.marketTotal.toFixed(1),
+            String(r.homeML),
+            String(r.awayML),
+            String(r.runLine),
+            String(r.runLineHomeOdds),
+            String(r.runLineAwayOdds),
+            String(r.overOdds),
+            String(r.underOdds),
+            r.awayLineupConfidence,
+            r.homeLineupConfidence,
+            r.starterFreshness,
+            r.weatherFreshness,
+            r.sharpFreshness,
+            r.compositeMarket,
+            r.compositePick,
+            r.compositeScore.toFixed(1),
+            r.compositeTier,
+            r.compositeReasons.join(' | '),
+            r.lookupKey,
+          ].map(csvEscape).join(','),
+        }))
+    } catch {
+      // API not running or no DB predictions — export UI rows only
+    }
+
+    // Merge: UI rows first (they take priority), then DB rows.
+    // Deduplicate by lookupKey — first occurrence wins (UI over DB).
+    const seen = new Set<string>()
+    const merged = [...uiLines, ...dbLines].filter((r) => {
+      if (seen.has(r.lookupKey)) return false
+      seen.add(r.lookupKey)
+      return true
+    })
+
+    // Sort by game time
+    const allLines = merged.sort((a, b) => parseGameTime(a.gameTime) - parseGameTime(b.gameTime))
+
+    const uiCount = uiLines.filter((r) => seen.has(r.lookupKey)).length
+    const dbCount = allLines.length - uiCount
+
+    const csv = [header.map(csvEscape).join(','), ...allLines.map((r) => r.line)].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -291,7 +367,11 @@ export function ScheduleAnalysis({
     link.download = `mlb-predictions-${exportDate}.csv`
     link.click()
     URL.revokeObjectURL(url)
-    setBulkStatus(`Predictions exported for ${exportDate}.`)
+    setBulkStatus(
+      dbCount > 0
+        ? `Predictions exported for ${exportDate} (${allLines.length} games: ${uiCount} from UI + ${dbCount} from DB).`
+        : `Predictions exported for ${exportDate}.`,
+    )
     setBulkStatusTone('success')
   }
 
@@ -720,6 +800,17 @@ function defaultOddsForGame(teams: Record<TeamAbbr, TeamStats>, homeTeam: TeamAb
     overOdds: -110,
     underOdds: -110,
   }
+}
+
+function parseGameTime(gameTime: string): number {
+  const match = gameTime.match(/(\d+):(\d+)\s*(AM|PM)/i)
+  if (!match || !match[1] || !match[2] || !match[3]) return 0
+  let hours = parseInt(match[1], 10)
+  const minutes = parseInt(match[2], 10)
+  const meridiem = match[3].toUpperCase()
+  if (meridiem === 'PM' && hours !== 12) hours += 12
+  if (meridiem === 'AM' && hours === 12) hours = 0
+  return hours * 60 + minutes
 }
 
 function csvEscape(value: string) {

@@ -43,6 +43,52 @@ async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promis
   return response.json() as Promise<T>
 }
 
+export type StoredPredictionRow = {
+  date: string
+  gameTime: string
+  awayTeam: string
+  homeTeam: string
+  awayStarter: string
+  homeStarter: string
+  awayRuns: number
+  homeRuns: number
+  total: number
+  margin: number
+  homeWinProb: number
+  awayWinProb: number
+  moneylineRec: string
+  moneylineEdgePct: number
+  runLineRec: string
+  runLineEdgePct: number
+  totalRec: string
+  totalEdgePct: number
+  marketTotal: number
+  homeML: number
+  awayML: number
+  runLine: number
+  runLineHomeOdds: number
+  runLineAwayOdds: number
+  overOdds: number
+  underOdds: number
+  awayLineupConfidence: string
+  homeLineupConfidence: string
+  starterFreshness: string
+  weatherFreshness: string
+  sharpFreshness: string
+  compositeMarket: string
+  compositePick: string
+  compositeScore: number
+  compositeTier: string
+  compositeReasons: string[]
+  lookupKey: string
+}
+
+export async function fetchStoredPredictions(date: string) {
+  return readJson<StoredPredictionRow[]>(
+    `${AUTOMATION_API_BASE_URL}/api/automation/predictions?date=${encodeURIComponent(date)}`,
+  )
+}
+
 export async function fetchLatestAutomationRuns(limit = 10) {
   return readJson<AutomationRun[]>(`${AUTOMATION_API_BASE_URL}/api/automation/runs/latest?limit=${encodeURIComponent(String(limit))}`)
 }

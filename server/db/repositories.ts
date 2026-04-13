@@ -422,6 +422,19 @@ export async function listPredictionRuns(limit = 10) {
   })
 }
 
+export async function getLatestPredictionRunForDate(date: string) {
+  const prisma = getPrismaClient()
+  if (!prisma) return null
+
+  return prisma.predictionRun.findFirst({
+    where: {
+      businessDate: toBusinessDate(date),
+      sport: DEFAULT_SPORT,
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+}
+
 export async function getPredictionsByRunOrDate(args: { runId?: string; date?: string }) {
   const prisma = getPrismaClient()
   if (!prisma) return []
@@ -434,6 +447,16 @@ export async function getPredictionsByRunOrDate(args: { runId?: string; date?: s
   }
 
   if (args.date) {
+    // Scope to the most recent run for this date to avoid duplicate rows
+    // when the pipeline has been run multiple times on the same date.
+    const latestRun = await getLatestPredictionRunForDate(args.date)
+    if (latestRun) {
+      return prisma.mlbPrediction.findMany({
+        where: { predictionRunId: latestRun.id },
+        orderBy: { lookupKey: 'asc' },
+      })
+    }
+    // Fallback: no run record found, query by date directly
     return prisma.mlbPrediction.findMany({
       where: { businessDate: toBusinessDate(args.date) },
       orderBy: { lookupKey: 'asc' },
