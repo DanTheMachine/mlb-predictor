@@ -196,11 +196,60 @@ The import expects the historical sheet headers used by `server/services/histori
 
 If the file also includes `Actual Home Score` and `Actual Away Score`, results are imported too.
 
+## Automated Daily Pipeline (macOS launchd)
+
+The daily pipeline runs automatically at **9 AM Pacific** via macOS launchd. This replaces Airflow as the production scheduler — Airflow 2.10.x has a Python 3.11 multiprocessing incompatibility on macOS that prevents tasks from executing.
+
+### How it works
+
+1. launchd fires `airflow/run-pipeline.sh` at 9 AM daily
+2. The script checks if the proxy is running; starts it if not
+3. Runs: `npm run cli -- run-daily-pipeline --date DATE --use-odds-overrides --override-source betlotus-mlb`
+4. Logs output to `airflow/logs/pipeline/YYYY-MM-DD.log`
+
+### Managing the launchd job
+
+```bash
+# Check if the job is loaded and running
+launchctl list | grep mlb-predictor
+
+# Load (install/enable) the job
+launchctl load ~/Library/LaunchAgents/com.mlb-predictor.daily-pipeline.plist
+
+# Unload (disable) the job
+launchctl unload ~/Library/LaunchAgents/com.mlb-predictor.daily-pipeline.plist
+
+# Trigger a manual run right now
+launchctl start com.mlb-predictor.daily-pipeline
+
+# View today's log
+cat airflow/logs/pipeline/$(date +%Y-%m-%d).log
+
+# View launchd stdout/stderr
+cat airflow/logs/pipeline/launchd-stdout.log
+cat airflow/logs/pipeline/launchd-stderr.log
+```
+
+### If the Mac was asleep at 9 AM
+
+launchd handles this natively — the job fires when the Mac wakes. No manual intervention needed.
+
+### Airflow webserver (optional, for UI only)
+
+The Airflow DAG (`airflow/dags/mlb_automation.py`) still exists and the webserver can be started for visibility, but the **scheduler is not used in production**:
+
+```bash
+cd airflow
+bash start.sh
+# Opens Airflow UI at http://localhost:8080
+```
+
 ## Cross-Platform Notes
 
 - The app, API, CLI, Prisma, and Postgres setup are intended to work on both Windows and macOS.
-- The Airflow DAG is now platform-neutral and chooses `npm` vs `npm.cmd` automatically based on the host OS.
-- If Airflow is not running from the repo root, set `MLB_PREDICTOR_DIR` to the project directory before starting Airflow.
+- The Airflow DAG is platform-neutral and chooses `npm` vs `npm.cmd` automatically based on host OS, but the scheduler is not used on macOS — launchd is the production scheduler.
+- If running the CLI manually, the proxy must be running first (`npm run proxy` in a separate terminal).
+- Set `MLB_PREDICTOR_DIR` env var if running outside the repo root.
 
 ## Normal Predictor Workflow
 

@@ -113,6 +113,26 @@ app.get('/espn/mlb/scoreboard', async (req, res) => {
   }
 })
 
+app.get('/mlb/pitcher-season-stats', async (req, res) => {
+  const season = typeof req.query.season === 'string' ? req.query.season : ''
+  if (!/^\d{4}$/.test(season)) {
+    res.status(400).json({ ok: false, error: 'Expected season query in YYYY format.' })
+    return
+  }
+
+  try {
+    const url =
+      `https://statsapi.mlb.com/api/v1/stats?stats=season&group=pitching` +
+      `&season=${encodeURIComponent(season)}&sportId=1&playerPool=All&limit=600`
+    await proxyJson(res, url)
+  } catch (error) {
+    res.status(502).json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'MLB pitcher stats fetch failed.',
+    })
+  }
+})
+
 app.get('/mlb/game/:gamePk/boxscore', async (req, res) => {
   const gamePk = Number(req.params.gamePk)
   if (!Number.isInteger(gamePk) || gamePk <= 0) {

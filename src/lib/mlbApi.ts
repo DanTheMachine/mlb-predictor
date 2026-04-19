@@ -27,6 +27,29 @@ export type TeamRatingsSnapshot = {
   teams: Record<TeamAbbr, TeamStats>
   sourceSeason: number
   fetchedAt: string
+  leagueAvgRunsPerGame: number
+}
+
+export type StarterStatsMap = Map<string, StarterStats>
+
+type PitcherSeasonStatSplit = {
+  stat: {
+    era?: string | number
+    whip?: string | number
+    strikeOuts?: number
+    baseOnBalls?: number
+    homeRuns?: number
+    hits?: number
+    inningsPitched?: string | number
+    gamesStarted?: number
+    battersFaced?: number
+  }
+  player?: { id?: number; fullName?: string }
+  team?: { id?: number; abbreviation?: string }
+}
+
+type PitcherSeasonStatsResponse = {
+  stats?: Array<{ splits?: PitcherSeasonStatSplit[] }>
 }
 
 type LiveTeam = {
@@ -340,17 +363,24 @@ export function normalizeMlbTeam(team: LiveTeam | undefined): TeamAbbr | null {
   return null
 }
 
-export function resolveLiveStarter(team: TeamAbbr, probablePitcher: LivePitcher | undefined): StarterStats {
+export function resolveLiveStarter(
+  team: TeamAbbr,
+  probablePitcher: LivePitcher | undefined,
+  starterStatsMap?: StarterStatsMap,
+): StarterStats {
   const liveName = probablePitcher?.fullName?.trim()
   if (!liveName) return getDefaultStarter(team)
+
+  const hand: 'L' | 'R' = probablePitcher?.pitchingHand?.code?.toUpperCase() === 'L' ? 'L' : 'R'
+
+  const liveStats = starterStatsMap?.get(liveName.toLowerCase())
+  if (liveStats) return { ...liveStats, hand }
 
   const starters = getStartersForTeam(team)
   const exact = starters.find((starter) => starter.name.toLowerCase() === liveName.toLowerCase())
   if (exact) return exact
 
   const baseStarter = getDefaultStarter(team)
-  const hand = probablePitcher?.pitchingHand?.code?.toUpperCase() === 'L' ? 'L' : 'R'
-
   return {
     ...baseStarter,
     id: `${team}-${liveName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
@@ -457,16 +487,30 @@ export async function fetchLiveScheduleRows(
     lineupFetcher?: LineupFetcher
     oddsFetcher?: OddsFetcher
     sharpFetcher?: SharpFetcher
+    starterStatsFetcher?: () => Promise<StarterStatsMap>
+    liveTeams?: Record<TeamAbbr, TeamStats>
   } = {},
 ): Promise<ScheduleRow[]> {
-  const schedule = await (options.scheduleFetcher ?? fetchSchedule)(date)
+  const season = Number(date.slice(0, 4)) || new Date().getFullYear()
+  const defaultStarterFetcher = () => fetchStarterStatsMap(season)
+
+  const [schedule, starterStatsMap] = await Promise.all([
+    (options.scheduleFetcher ?? fetchSchedule)(date),
+    (options.starterStatsFetcher ?? defaultStarterFetcher)(),
+  ])
+
   const games = schedule.dates?.flatMap((entry) => entry.games ?? []) ?? []
   const weatherFetcher = options.weatherFetcher ?? fetchWeather
   const lineupFetcher = options.lineupFetcher ?? fetchLineup
   const oddsMap = await (options.oddsFetcher ?? fetchEspnOddsMap)(date)
   const sharpMap = await (options.sharpFetcher ?? fetchEspnSharpSignalsMap)(date)
+  const liveTeams = options.liveTeams
 
-  const rows = await Promise.all(games.map(async (game) => buildLiveScheduleRow(game, weatherFetcher, lineupFetcher, oddsMap, sharpMap)))
+  const rows = await Promise.all(
+    games.map(async (game) =>
+      buildLiveScheduleRow(game, weatherFetcher, lineupFetcher, oddsMap, sharpMap, starterStatsMap, liveTeams),
+    ),
+  )
 
   return rows.filter((row): row is ScheduleRow => row !== null)
 }
@@ -523,17 +567,96 @@ export async function fetchCompletedGameResults(date: string): Promise<GradingRe
 }
 
 export async function fetchTeamRatings(season: number): Promise<TeamRatingsSnapshot> {
-  const attemptedSeasons = [season, season - 1]
+  return fetchTeamRatingsForSeason(season)
+}
 
-  for (const sourceSeason of attemptedSeasons) {
-    const snapshot = await fetchTeamRatingsForSeason(sourceSeason)
-    const completeCount = Object.values(snapshot.teams).filter((team) => team.offenseVsR !== TEAMS[team.abbr].offenseVsR || team.bullpen !== TEAMS[team.abbr].bullpen).length
-    if (completeCount >= 20) {
-      return snapshot
+function parseInningsPitched(ip: string | number): number {
+  const s = String(ip)
+  const dot = s.indexOf('.')
+  if (dot === -1) return Number(s)
+  return Number(s.slice(0, dot)) + Number(s.slice(dot + 1)) / 3
+}
+
+function computeFip(hr: number, bb: number, k: number, ip: number): number {
+  if (ip <= 0) return 4.25
+  return Math.max(0, (13 * hr + 3 * bb - 2 * k) / ip + 3.2)
+}
+
+function computePitchingRating(era: number, kRate: number, bbRate: number): number {
+  return Math.round(Math.min(118, Math.max(84, 100 + (4.25 - era) * 8 + (kRate - 22) * 0.3 - (bbRate - 8) * 0.1)))
+}
+
+function pitcherRole(rating: number): 'Ace' | 'Mid-Rotation' | 'Back-End' {
+  if (rating >= 107) return 'Ace'
+  if (rating >= 98) return 'Mid-Rotation'
+  return 'Back-End'
+}
+
+const MIN_STARTER_IP = 15
+const MIN_STARTER_GS = 2
+
+export async function fetchStarterStatsMap(season: number): Promise<StarterStatsMap> {
+  try {
+    const response = await fetch(`${PROXY_BASE_URL}/mlb/pitcher-season-stats?season=${season}`)
+    if (!response.ok) return new Map()
+
+    const payload = (await response.json()) as PitcherSeasonStatsResponse
+    const map: StarterStatsMap = new Map()
+
+    for (const split of payload.stats?.flatMap((s) => s.splits ?? []) ?? []) {
+      const name = split.player?.fullName?.trim()
+      if (!name) continue
+
+      const gs = split.stat.gamesStarted ?? 0
+      if (gs < MIN_STARTER_GS) continue
+
+      const ip = parseInningsPitched(split.stat.inningsPitched ?? 0)
+      if (ip < MIN_STARTER_IP) continue
+
+      const era = Math.max(0, Number(split.stat.era ?? 4.25))
+      const whip = Math.max(0, Number(split.stat.whip ?? 1.28))
+      const k = split.stat.strikeOuts ?? 0
+      const bb = split.stat.baseOnBalls ?? 0
+      const hr = split.stat.homeRuns ?? 0
+      const h = split.stat.hits ?? 0
+      const bf = split.stat.battersFaced ?? Math.round(3 * ip + h + bb)
+
+      const kRate = bf > 0 ? (k / bf) * 100 : 22
+      const bbRate = bf > 0 ? (bb / bf) * 100 : 8
+      const hr9 = ip > 0 ? (hr / ip) * 9 : 1.0
+      const fip = computeFip(hr, bb, k, ip)
+      const inningsPerStart = gs > 0 ? ip / gs : 5.5
+      const pitchingRating = computePitchingRating(era, kRate, bbRate)
+      const role = pitcherRole(pitchingRating)
+
+      const teamCode = split.team?.abbreviation?.toUpperCase()
+      const teamAbbr = teamCode ? (TEAM_CODE_MAP[teamCode] ?? null) : null
+      if (!teamAbbr) continue
+
+      const normalizedName = name.toLowerCase()
+      map.set(normalizedName, {
+        id: `${teamAbbr}-${normalizedName.replace(/[^a-z0-9]+/g, '-')}`,
+        team: teamAbbr,
+        name,
+        hand: 'R',
+        era: Number(era.toFixed(2)),
+        fip: Number(fip.toFixed(2)),
+        whip: Number(whip.toFixed(2)),
+        kRate: Number(kRate.toFixed(1)),
+        bbRate: Number(bbRate.toFixed(1)),
+        hr9: Number(hr9.toFixed(2)),
+        inningsPerStart: Number(inningsPerStart.toFixed(1)),
+        pitchingRating,
+        role,
+        recentPitchCount: 90,
+        daysRest: 5,
+      })
     }
-  }
 
-  throw new Error(`Unable to build MLB team ratings for ${season} or ${season - 1}.`)
+    return map
+  } catch {
+    return new Map()
+  }
 }
 
 async function buildLiveScheduleRow(
@@ -542,6 +665,8 @@ async function buildLiveScheduleRow(
   lineupFetcher: LineupFetcher,
   oddsMap: Partial<Record<string, OddsInput>>,
   sharpMap: Partial<Record<string, SharpSignalInput>>,
+  starterStatsMap: StarterStatsMap,
+  liveTeams?: Record<TeamAbbr, TeamStats>,
 ): Promise<ScheduleRow | null> {
   const awayTeam = normalizeMlbTeam(game.teams?.away?.team)
   const homeTeam = normalizeMlbTeam(game.teams?.home?.team)
@@ -554,8 +679,8 @@ async function buildLiveScheduleRow(
   const now = new Date().toISOString()
   const weather = await weatherFetcher(homeTeam, gameDate)
   const lineup = game.gamePk ? await lineupFetcher(game.gamePk) : null
-  const awayStarter = resolveLiveStarter(awayTeam, game.teams?.away?.probablePitcher)
-  const homeStarter = resolveLiveStarter(homeTeam, game.teams?.home?.probablePitcher)
+  const awayStarter = resolveLiveStarter(awayTeam, game.teams?.away?.probablePitcher, starterStatsMap)
+  const homeStarter = resolveLiveStarter(homeTeam, game.teams?.home?.probablePitcher, starterStatsMap)
   const lookup = oddsLookupKey(homeTeam, awayTeam)
   const odds = oddsMap[lookup] ?? defaultOddsForGame(homeTeam, awayTeam)
   const sharpInput = sharpMap[lookup] ?? null
@@ -582,7 +707,7 @@ async function buildLiveScheduleRow(
     windDirection: weather?.windDirection ?? 'Neutral',
     weatherLastUpdated: weather ? now : '',
     availabilityNotes: buildAvailabilityNotes(awayTeam, homeTeam, weather?.summary, lineup),
-    recentForm: buildRecentForm(awayTeam, homeTeam, now),
+    recentForm: buildRecentForm(awayTeam, homeTeam, now, liveTeams),
     sharpInput,
     compositeRecommendation: null,
     odds,
@@ -627,17 +752,25 @@ async function fetchTeamRatingsForSeason(season: number): Promise<TeamRatingsSna
     fetchTeamStats('hitting', season, 'vl').catch(() => ({ stats: [] }) as TeamStatsResponse),
   ])
 
+  const teams = buildTeamRatingsFromStats({
+    baseTeams: TEAMS,
+    hitting: toTeamStatMap(hitting),
+    hittingVsR: toTeamStatMap(hittingVsR),
+    hittingVsL: toTeamStatMap(hittingVsL),
+    pitching: toTeamStatMap(pitching),
+    fielding: toTeamStatMap(fielding),
+  })
+
+  const rpgValues = Object.values(teams)
+    .map((t) => t.recentRunsPerGame)
+    .filter((v): v is number => v !== undefined)
+  const leagueAvgRunsPerGame = rpgValues.length > 0 ? rpgValues.reduce((s, v) => s + v, 0) / rpgValues.length : 4.35
+
   return {
-    teams: buildTeamRatingsFromStats({
-      baseTeams: TEAMS,
-      hitting: toTeamStatMap(hitting),
-      hittingVsR: toTeamStatMap(hittingVsR),
-      hittingVsL: toTeamStatMap(hittingVsL),
-      pitching: toTeamStatMap(pitching),
-      fielding: toTeamStatMap(fielding),
-    }),
+    teams,
     sourceSeason: season,
     fetchedAt: new Date().toISOString(),
+    leagueAvgRunsPerGame,
   }
 }
 
@@ -665,16 +798,25 @@ function toGradingResultRow(game: LiveGame, fallbackDate: string): GradingResult
   }
 }
 
-function buildRecentForm(awayTeam: TeamAbbr, homeTeam: TeamAbbr, lastUpdated: string): { away: RecentFormSummary; home: RecentFormSummary } {
+function buildRecentForm(
+  awayTeam: TeamAbbr,
+  homeTeam: TeamAbbr,
+  lastUpdated: string,
+  liveTeams?: Record<TeamAbbr, TeamStats>,
+): { away: RecentFormSummary; home: RecentFormSummary } {
   return {
-    away: createRecentFormSummary(awayTeam, lastUpdated),
-    home: createRecentFormSummary(homeTeam, lastUpdated),
+    away: createRecentFormSummary(awayTeam, lastUpdated, liveTeams),
+    home: createRecentFormSummary(homeTeam, lastUpdated, liveTeams),
   }
 }
 
-function createRecentFormSummary(team: TeamAbbr, lastUpdated: string): RecentFormSummary {
-  const stats = TEAMS[team]
-  const offenseRuns = ((stats.offenseVsR + stats.offenseVsL) / 200) * 4.35
+function createRecentFormSummary(
+  team: TeamAbbr,
+  lastUpdated: string,
+  liveTeams?: Record<TeamAbbr, TeamStats>,
+): RecentFormSummary {
+  const stats = (liveTeams ?? TEAMS)[team]
+  const offenseRuns = stats.recentRunsPerGame ?? ((stats.offenseVsR + stats.offenseVsL) / 200) * 4.35
   const prevention = 4.7 - (stats.defense - 100) * 0.05 - (stats.bullpen - 100) * 0.04
   const trend = stats.bullpen >= 102 ? 'bullpen entering in good shape' : stats.bullpen <= 97 ? 'bullpen depth still a question' : 'relief usage near baseline'
 

@@ -116,7 +116,7 @@ function toManualOddsForm(odds: OddsInput): ManualOddsForm {
   }
 }
 
-export function usePredictorState(teams: Record<TeamAbbr, TeamStats>): PredictorState {
+export function usePredictorState(teams: Record<TeamAbbr, TeamStats>, leagueAvgRunsPerGame = 4.35): PredictorState {
   const [homeTeam, setHomeTeam] = useState<TeamAbbr>('LAD')
   const [awayTeam, setAwayTeam] = useState<TeamAbbr>('ATL')
   const [homeStarterId, setHomeStarterId] = useState(getDefaultStarter('LAD').id)
@@ -164,6 +164,7 @@ export function usePredictorState(teams: Record<TeamAbbr, TeamStats>): Predictor
       awayBullpenWorkload: createDefaultBullpenWorkload('Used'),
       homeLineupConfidence: 'Confirmed',
       awayLineupConfidence: 'Projected',
+      leagueAvgRunsPerGame,
     }),
   )
 
@@ -207,6 +208,7 @@ export function usePredictorState(teams: Record<TeamAbbr, TeamStats>): Predictor
         awayBullpenWorkload,
         homeLineupConfidence,
         awayLineupConfidence,
+        leagueAvgRunsPerGame,
       }),
     )
   }

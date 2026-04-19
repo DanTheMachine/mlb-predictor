@@ -23,6 +23,7 @@ const SAMPLE_SLATE: Array<{ awayTeam: TeamAbbr; homeTeam: TeamAbbr; gameTime: st
 
 type ScheduleAnalysisProps = {
   teams: Record<TeamAbbr, TeamStats>
+  leagueAvgRunsPerGame?: number
   teamDataTone: 'neutral' | 'success' | 'error'
   teamDataStatus: string
   teamsUpdated: boolean
@@ -34,6 +35,7 @@ type ScheduleAnalysisProps = {
 
 export function ScheduleAnalysis({
   teams,
+  leagueAvgRunsPerGame = 4.35,
   teamDataTone,
   teamDataStatus,
   teamsUpdated,
@@ -66,6 +68,26 @@ export function ScheduleAnalysis({
       }),
     [rows],
   )
+
+  const bestBets = useMemo(() => {
+    if (!hasRunAllSims) return []
+    return enrichedRows
+      .flatMap(({ row, compositeSet, analysis }) => {
+        if (!compositeSet) return []
+        return (['ML', 'RL', 'OU'] as const)
+          .map((market) => ({
+            market,
+            composite: compositeSet[market],
+            row,
+            edgePct:
+              market === 'ML' ? (analysis?.mlValuePct ?? 0)
+              : market === 'RL' ? (analysis?.runLineEdge ?? 0)
+              : (analysis?.ouEdgePct ?? 0),
+          }))
+          .filter(({ composite }) => !composite.pass)
+      })
+      .sort((a, b) => b.composite.score - a.composite.score)
+  }, [enrichedRows, hasRunAllSims])
 
   const liveBoardSummary = useMemo(() => {
     const upcomingRows = rows.filter((row) => isUpcomingGame(row))
@@ -150,7 +172,7 @@ export function ScheduleAnalysis({
     setLiveLoadFailed(false)
 
     try {
-      const slateRows = await fetchLiveScheduleRows(liveDate)
+      const slateRows = await fetchLiveScheduleRows(liveDate, { liveTeams: teams })
       setRows(slateRows)
       setHasRunAllSims(false)
       setExpandedIdx(null)
@@ -191,6 +213,7 @@ export function ScheduleAnalysis({
           awayBullpenWorkload: row.awayBullpenWorkload,
           homeLineupConfidence: row.homeLineupConfidence,
           awayLineupConfidence: row.awayLineupConfidence,
+          leagueAvgRunsPerGame,
         })
         const analysis = analyzeBetting(result, row.odds)
         return { ...row, result, compositeRecommendation: buildCompositeRecommendation({ ...row, result }, analysis) }
@@ -527,6 +550,33 @@ export function ScheduleAnalysis({
             <button className="secondary-button bulk-edit-button" onClick={() => setBulkPaste('')} disabled={!bulkPaste.trim()}>
               Clear
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {hasRunAllSims && bestBets.length > 0 ? (
+        <div className="best-bets-panel">
+          <div className="best-bets-header">
+            <strong>Best Bets</strong>
+            <span className="subtle-copy">{bestBets.length} play{bestBets.length !== 1 ? 's' : ''} · sorted by score</span>
+          </div>
+          <div className="best-bets-list">
+            {bestBets.map(({ market, composite, row, edgePct }, idx) => (
+              <div key={idx} className="best-bet-row">
+                <span className={`best-bet-tier ${compositeTierClass(composite)}`}>{composite.tier}</span>
+                <span className="best-bet-market">{market}</span>
+                <span className="best-bet-game">
+                  <span className="best-bet-matchup">{row.game.awayTeam} @ {row.game.homeTeam} · {row.game.gameTime}</span>
+                  <span className="best-bet-pitching">{row.awayStarter.name} vs {row.homeStarter.name}</span>
+                  {composite.reasons[0] ? <span className="best-bet-reason">{composite.reasons[0]}</span> : null}
+                </span>
+                <span className="best-bet-pick">{formatCompositeCardPick(row, composite)}</span>
+                <span className="best-bet-meta">
+                  <span className={compositeTierClass(composite)}>{composite.score.toFixed(1)}/10</span>
+                  <span className="best-bet-edge">{edgePct.toFixed(1)}%</span>
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       ) : null}

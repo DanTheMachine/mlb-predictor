@@ -52,11 +52,10 @@ export async function captureOddsOverrides(args?: { date?: string; source?: stri
 
     await typeIntoField(usernameField, settings.username)
     await usernameField.press('Tab')
-    await page.waitForTimeout(Math.max(250, appConfig.oddsCaptureTypeDelayMs * 2))
 
     await typeIntoField(passwordField, settings.password)
     await passwordField.press('Tab')
-    await page.waitForTimeout(Math.max(500, appConfig.oddsCaptureStepDelayMs))
+    await page.waitForTimeout(300)
 
     await submitLogin(page, passwordField, submitButton)
     await waitForAppShell(page)
@@ -70,25 +69,18 @@ export async function captureOddsOverrides(args?: { date?: string; source?: stri
     }
 
     await closeModalIfPresent(page, settings.modalCloseSelector)
+    await page.waitForTimeout(2000)
 
     if (settings.postLoginScript) {
-      const executed = await tryRunPostLoginScript(page, settings.postLoginScript)
-      if (executed && appConfig.oddsCaptureStepDelayMs > 0) {
-        await page.waitForTimeout(appConfig.oddsCaptureStepDelayMs)
-      }
+      await tryRunPostLoginScript(page, settings.postLoginScript)
     }
 
     for (const selector of settings.navSelectors) {
       await closeModalIfPresent(page, settings.modalCloseSelector)
       await clickNavTarget(page, selector, settings.modalCloseSelector)
-      if (appConfig.oddsCaptureStepDelayMs > 0) {
-        await page.waitForTimeout(appConfig.oddsCaptureStepDelayMs)
-      }
     }
 
-    if (settings.readySelector) {
-      await (await findLocator(page, settings.readySelector)).waitFor()
-    }
+    await page.waitForTimeout(2000)
 
     const contentLocator = await findLocator(page, settings.contentSelector)
     const raw = await contentLocator.innerText()
@@ -194,13 +186,14 @@ async function findLocator(page: Page, selector: string, targetFrame?: Frame | n
 }
 
 async function findNavLocator(page: Page, selector: string) {
+  const navTimeoutMs = Math.min(1500, appConfig.oddsCaptureTimeoutMs)
   try {
-    return await findVisibleLocator(page, selector, Math.min(5000, appConfig.oddsCaptureTimeoutMs))
+    return await findVisibleLocator(page, selector, navTimeoutMs)
   } catch (error) {
     const fallbacks = getNavFallbackSelectors(selector)
     for (const fallback of fallbacks) {
       try {
-        return await findVisibleLocator(page, fallback, Math.min(5000, appConfig.oddsCaptureTimeoutMs))
+        return await findVisibleLocator(page, fallback, navTimeoutMs)
       } catch {
         // Try the next known fallback for the current sportsbook layout.
       }
@@ -209,7 +202,7 @@ async function findNavLocator(page: Page, selector: string) {
     const permissiveSelectors = [selector, ...fallbacks]
     for (const permissiveSelector of permissiveSelectors) {
       try {
-        return await findLocator(page, permissiveSelector, undefined, Math.min(5000, appConfig.oddsCaptureTimeoutMs))
+        return await findLocator(page, permissiveSelector, undefined, navTimeoutMs)
       } catch {
         // Fall through to the original error.
       }
@@ -274,7 +267,7 @@ async function closeModalIfPresent(page: Page, selector: string | null) {
       const button = activeModal.locator(closeSelector).first()
       if ((await button.count()) > 0 && (await button.isVisible())) {
         await button.click({ force: true })
-        await page.waitForTimeout(Math.max(400, appConfig.oddsCaptureStepDelayMs))
+        await activeModal.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {})
         if (!(await activeModal.isVisible().catch(() => false))) {
           return
         }
@@ -282,7 +275,7 @@ async function closeModalIfPresent(page: Page, selector: string | null) {
     }
 
     await page.keyboard.press('Escape').catch(() => {})
-    await page.waitForTimeout(Math.max(400, appConfig.oddsCaptureStepDelayMs))
+    await activeModal.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {})
   }
 
   if (!selector) return
@@ -291,9 +284,7 @@ async function closeModalIfPresent(page: Page, selector: string | null) {
     const locator = await findLocator(page, selector)
     if ((await locator.count()) > 0 && (await locator.isVisible())) {
       await locator.click()
-      if (appConfig.oddsCaptureStepDelayMs > 0) {
-        await page.waitForTimeout(appConfig.oddsCaptureStepDelayMs)
-      }
+      await locator.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {})
     }
   } catch {
     // Some sessions may not show the account modal.
@@ -334,9 +325,9 @@ async function clickNavTarget(page: Page, selector: string, modalSelector: strin
 
 async function typeIntoField(locator: Locator, value: string) {
   await locator.click()
-  await locator.fill('')
-  await locator.pressSequentially(value, { delay: appConfig.oddsCaptureTypeDelayMs })
+  await locator.fill(value)
 }
+
 
 async function submitLogin(page: Page, passwordField: Locator, submitButton: Locator) {
   await submitButton.click()
@@ -378,7 +369,7 @@ async function waitForAppShell(page: Page) {
 async function tryRunPostLoginScript(page: Page, script: string) {
   try {
     await page.waitForFunction(() => typeof (window as typeof window & { OpenLineLink?: unknown }).OpenLineLink === 'function', {
-      timeout: Math.min(15000, appConfig.oddsCaptureTimeoutMs),
+      timeout: Math.min(5000, appConfig.oddsCaptureTimeoutMs),
     })
   } catch {
     return false

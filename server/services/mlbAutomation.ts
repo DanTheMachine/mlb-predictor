@@ -6,7 +6,7 @@ import { buildCompositeRecommendation } from '../../src/lib/compositeRecommendat
 import { fetchCompletedGameResults, fetchLiveScheduleRows, fetchTeamRatings } from '../../src/lib/mlbApi.js'
 import { predictGame } from '../../src/lib/mlbModel.js'
 import { DEFAULT_THRESHOLDS, evaluatePredictions, type ParsedPredictionRow, type ParsedResultRow } from '../../src/lib/modelEvaluation.js'
-import type { LineupConfidence, ScheduleRow, TeamAbbr } from '../../src/lib/mlbTypes.js'
+import type { LineupConfidence, ScheduleRow, TeamAbbr, TeamStats } from '../../src/lib/mlbTypes.js'
 import { appConfig, assertDateInput, isDbConfigured, subtractOneDay } from '../config.js'
 import {
   createPredictionFileRecord,
@@ -82,9 +82,9 @@ export async function refreshTeamStats(dateInput?: string) {
   return snapshot
 }
 
-export async function loadSlate(dateInput?: string, options: PredictionRunOptions = {}) {
+export async function loadSlate(dateInput?: string, options: PredictionRunOptions = {}, liveTeams?: Record<TeamAbbr, TeamStats>) {
   const date = assertDateInput(dateInput)
-  const rows = await fetchLiveScheduleRows(date)
+  const rows = await fetchLiveScheduleRows(date, { liveTeams })
   const sharpRows = await loadSharpSignals(date, rows)
   const finalRows = options.useOddsOverrides ? await applyOddsOverrides(date, sharpRows, options.overrideSource) : sharpRows
   await saveSlateRows(date, finalRows)
@@ -110,7 +110,7 @@ export async function loadSharpSignals(dateInput: string, rows: ScheduleRow[]) {
 export async function generatePredictions(dateInput?: string, options: PredictionRunOptions = {}) {
   const date = assertDateInput(dateInput)
   const teamSnapshot = await refreshTeamStats(date)
-  const slate = await loadSlate(date, options)
+  const slate = await loadSlate(date, options, teamSnapshot.teams)
 
   const predictionRows = slate.map((row) => {
     const result = predictGame({
@@ -128,6 +128,7 @@ export async function generatePredictions(dateInput?: string, options: Predictio
       awayBullpenWorkload: row.awayBullpenWorkload,
       homeLineupConfidence: row.homeLineupConfidence,
       awayLineupConfidence: row.awayLineupConfidence,
+      leagueAvgRunsPerGame: teamSnapshot.leagueAvgRunsPerGame,
     })
 
     const projectedRow = { ...row, result }

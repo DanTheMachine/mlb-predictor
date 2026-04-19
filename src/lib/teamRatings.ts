@@ -125,6 +125,13 @@ export function buildTeamRatingsFromStats(args: {
       holds * 0.006
   }
 
+  const recentRpgInputs: Partial<Record<TeamAbbr, number>> = {}
+  for (const team of teams) {
+    const runs = metricFor(hitting, team, ['runs'], 0)
+    const games = metricFor(hitting, team, ['gamesPlayed', 'games'], 0)
+    if (games > 0) recentRpgInputs[team] = runs / games
+  }
+
   return Object.fromEntries(
     teams.map((team) => {
       const base = baseTeams[team]
@@ -140,6 +147,7 @@ export function buildTeamRatingsFromStats(args: {
           baserunning: roundRating(normalizedScore(baserunningInputs, team)),
           defense: roundRating(normalizedScore(defenseInputs, team)),
           bullpen: roundRating(normalizedScore(bullpenInputs, team)),
+          recentRunsPerGame: recentRpgInputs[team],
         } satisfies TeamStats,
       ]
     }),

@@ -6,6 +6,7 @@ import type { TeamAbbr, TeamStats } from '../lib/mlbTypes'
 
 export type MlbModelDataState = {
   teams: Record<TeamAbbr, TeamStats>
+  leagueAvgRunsPerGame: number
   teamDataTone: 'neutral' | 'success' | 'error'
   teamDataStatus: string
   teamsUpdated: boolean
@@ -17,6 +18,7 @@ export type MlbModelDataState = {
 
 export function useMlbModelData(): MlbModelDataState {
   const [teams, setTeams] = useState<Record<TeamAbbr, TeamStats>>(TEAMS)
+  const [leagueAvgRunsPerGame, setLeagueAvgRunsPerGame] = useState(4.35)
   const [teamDataTone, setTeamDataTone] = useState<'neutral' | 'success' | 'error'>('neutral')
   const [teamDataStatus, setTeamDataStatus] = useState('Fetch MLB data to update the team ratings used by the model.')
   const [teamsUpdatedAt, setTeamsUpdatedAt] = useState<string | null>(null)
@@ -29,6 +31,7 @@ export function useMlbModelData(): MlbModelDataState {
     try {
       const snapshot = await fetchTeamRatings(season)
       setTeams(snapshot.teams)
+      setLeagueAvgRunsPerGame(snapshot.leagueAvgRunsPerGame)
       setTeamsUpdatedAt(snapshot.fetchedAt)
       setLoadedSeason(snapshot.sourceSeason)
       setTeamDataTone('success')
@@ -45,6 +48,7 @@ export function useMlbModelData(): MlbModelDataState {
 
   return {
     teams,
+    leagueAvgRunsPerGame,
     teamDataTone,
     teamDataStatus,
     teamsUpdated: teamDataTone === 'success',

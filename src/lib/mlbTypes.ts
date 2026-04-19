@@ -56,6 +56,7 @@ export type TeamStats = {
   defense: number
   bullpen: number
   parkFactor: number
+  recentRunsPerGame?: number
 }
 
 export type StarterStats = {
@@ -238,4 +239,5 @@ export type PredictGameInput = {
   awayBullpenWorkload: BullpenWorkload
   homeLineupConfidence: LineupConfidence
   awayLineupConfidence: LineupConfidence
+  leagueAvgRunsPerGame?: number
 }

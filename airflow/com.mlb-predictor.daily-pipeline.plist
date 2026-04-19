@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mlb-predictor.daily-pipeline</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/danieltorres/projects/mlb-predictor/airflow/run-pipeline.sh</string>
+    </array>
+
+    <!-- Run at 9:00 AM every day -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- If Mac was asleep at 9 AM, run when it wakes -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/danieltorres/projects/mlb-predictor/airflow/logs/pipeline/launchd-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/danieltorres/projects/mlb-predictor/airflow/logs/pipeline/launchd-stderr.log</string>
+</dict>
+</plist>

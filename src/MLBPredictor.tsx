@@ -15,7 +15,7 @@ type PredictorTab = 'predictor' | 'automation' | 'results' | 'evaluation'
 
 export function MLBPredictor() {
   const modelData = useMlbModelData()
-  const predictorState = usePredictorState(modelData.teams)
+  const predictorState = usePredictorState(modelData.teams, modelData.leagueAvgRunsPerGame)
   const resultsTracker = useResultsTracker()
   const automationDashboard = useAutomationDashboard()
   const [activeTab, setActiveTab] = useState<PredictorTab>('predictor')
@@ -48,6 +48,7 @@ export function MLBPredictor() {
         <section className="grid">
           <ScheduleAnalysis
             teams={modelData.teams}
+            leagueAvgRunsPerGame={modelData.leagueAvgRunsPerGame}
             teamDataTone={modelData.teamDataTone}
             teamDataStatus={modelData.teamDataStatus}
             teamsUpdated={modelData.teamsUpdated}

@@ -347,6 +347,7 @@ function projectTeamRuns({
   weather,
   parkFactor,
   postseason,
+  leagueAvgRunsPerGame,
 }: {
   battingTeam: TeamStats
   battingLineup: LineupConfidence
@@ -357,7 +358,9 @@ function projectTeamRuns({
   weather: number
   parkFactor: number
   postseason: boolean
+  leagueAvgRunsPerGame?: number
 }) {
+  const leagueAvg = leagueAvgRunsPerGame ?? 4.35
   const splitIndex = (opposingStarter.hand === 'L' ? battingTeam.offenseVsL : battingTeam.offenseVsR) / 100
   const styleAdj =
     1 +
@@ -375,8 +378,12 @@ function projectTeamRuns({
   const lineupAdj = lineupMultiplier(battingLineup)
   const playoffAdj = postseason ? 0.972 : 1
 
-  const runs =
-    4.35 * splitIndex * styleAdj * blendedPrevention * defenseAdj * parkFactor * weather * lineupAdj * playoffAdj
+  // Blend rating-based projection (85%) with team's actual season RPG (15%)
+  const ratingBase = leagueAvg * splitIndex
+  const recentBase = battingTeam.recentRunsPerGame ?? ratingBase
+  const blendedBase = ratingBase * 0.85 + recentBase * 0.15
+
+  const runs = blendedBase * styleAdj * blendedPrevention * defenseAdj * parkFactor * weather * lineupAdj * playoffAdj
 
   return {
     runs: clamp(runs, 2.3, 8.7),
@@ -394,6 +401,7 @@ export function predictGame(input: PredictGameInput): PredictionResult {
   const weather = weatherMultiplier(input.temperature, input.windMph, input.windDirection)
   const parkFactor = input.homeTeam.parkFactor / 100
   const postseason = input.gameType === 'Postseason'
+  const leagueAvgRunsPerGame = input.leagueAvgRunsPerGame
 
   const awayProjection = projectTeamRuns({
     battingTeam: input.awayTeam,
@@ -405,6 +413,7 @@ export function predictGame(input: PredictGameInput): PredictionResult {
     weather,
     parkFactor,
     postseason,
+    leagueAvgRunsPerGame,
   })
 
   const homeProjection = projectTeamRuns({
@@ -417,6 +426,7 @@ export function predictGame(input: PredictGameInput): PredictionResult {
     weather,
     parkFactor,
     postseason,
+    leagueAvgRunsPerGame,
   })
 
   const projectedHomeRuns = clamp(homeProjection.runs + 0.18, 2.4, 8.8)
@@ -424,10 +434,15 @@ export function predictGame(input: PredictGameInput): PredictionResult {
   const projectedTotal = projectedHomeRuns + projectedAwayRuns
   const projectedMargin = projectedHomeRuns - projectedAwayRuns
 
-  const winProb = clamp(1 / (1 + Math.exp(-(projectedMargin / 1.82))), 0.09, 0.91)
-  const homeRunLineCoverProb = clamp(1 - normCDF((1.5 - projectedMargin) / 2.45), 0.08, 0.86)
+  // #2: win prob sigma scales with run environment — higher-scoring games have wider margin variance
+  const winProbSigma = clamp(1.82 + (projectedTotal - 9.0) * 0.055, 1.5, 2.2)
+  const winProb = clamp(1 / (1 + Math.exp(-(projectedMargin / winProbSigma))), 0.09, 0.91)
+  const marginSigma = clamp(2.45 + (projectedTotal - 9.0) * 0.05, 2.0, 3.0)
+  const homeRunLineCoverProb = clamp(1 - normCDF((1.5 - projectedMargin) / marginSigma), 0.08, 0.86)
   const awayRunLineCoverProb = 1 - homeRunLineCoverProb
-  const totalStdDev = 2.05 + Math.abs(weather - 1) * 2.8
+  // #1: O/U std dev scales with pitcher quality — aces suppress total variance
+  const avgStarterRating = (input.homeStarter.pitchingRating + input.awayStarter.pitchingRating) / 2
+  const totalStdDev = 2.05 + (100 - avgStarterRating) * 0.012 + Math.abs(weather - 1) * 2.8
   const overProb = clamp(1 - normCDF((8.0 - projectedTotal) / totalStdDev), 0.12, 0.88)
   const underProb = 1 - overProb
 
