@@ -27,3 +27,9 @@ generated
 playwright-report
 test-results
 .claude/
+
+# Airflow runtime files
+airflow/airflow.cfg
+airflow/airflow.db
+airflow/airflow-webserver.pid
+airflow/dags/__pycache__/
