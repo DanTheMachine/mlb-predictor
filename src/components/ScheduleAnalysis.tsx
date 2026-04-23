@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { analyzeBetting } from '../lib/betting'
 import { parseBulkOdds } from '../lib/bulkOddsParser'
@@ -50,6 +50,18 @@ export function ScheduleAnalysis({
   const [bulkError, setBulkError] = useState('')
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
   const [liveDate, setLiveDate] = useState(() => new Date().toISOString().slice(0, 10))
+
+  useEffect(() => {
+    const refreshDateIfStale = () => {
+      const today = new Date().toISOString().slice(0, 10)
+      setLiveDate((prev) => (prev < today ? today : prev))
+    }
+    const handleVisibility = () => {
+      if (!document.hidden) refreshDateIfStale()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
   const [gamesLoading, setGamesLoading] = useState(false)
   const [liveLoadAttempted, setLiveLoadAttempted] = useState(false)
   const [liveLoadFailed, setLiveLoadFailed] = useState(false)

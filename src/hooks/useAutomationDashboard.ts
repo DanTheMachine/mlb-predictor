@@ -26,6 +26,19 @@ export function useAutomationDashboard() {
   const today = new Date().toISOString().slice(0, 10)
   const [runDate, setRunDate] = useState(today)
   const [resultsDate, setResultsDate] = useState(subtractDays(today, 1))
+
+  useEffect(() => {
+    const refreshDatesIfStale = () => {
+      const currentDay = new Date().toISOString().slice(0, 10)
+      setRunDate((prev) => (prev < currentDay ? currentDay : prev))
+      setResultsDate((prev) => (prev < subtractDays(currentDay, 1) ? subtractDays(currentDay, 1) : prev))
+    }
+    const handleVisibility = () => {
+      if (!document.hidden) refreshDatesIfStale()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
   const [apiAvailable, setApiAvailable] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('Checking automation API...')
