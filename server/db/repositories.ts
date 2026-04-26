@@ -188,6 +188,8 @@ export async function saveOddsOverrides(
     lookupKey: string
     awayTeam: TeamAbbr
     homeTeam: TeamAbbr
+    awayStarter?: string | null
+    homeStarter?: string | null
     source: string
     status?: string
     odds: OddsInput
@@ -211,6 +213,8 @@ export async function saveOddsOverrides(
         update: {
           awayTeam: row.awayTeam,
           homeTeam: row.homeTeam,
+          awayStarter: row.awayStarter ?? null,
+          homeStarter: row.homeStarter ?? null,
           status: row.status ?? 'staged',
           odds: toJson(row.odds),
           metadata: row.metadata ? toJson(row.metadata) : Prisma.JsonNull,
@@ -221,6 +225,8 @@ export async function saveOddsOverrides(
           lookupKey: row.lookupKey,
           awayTeam: row.awayTeam,
           homeTeam: row.homeTeam,
+          awayStarter: row.awayStarter ?? null,
+          homeStarter: row.homeStarter ?? null,
           source: row.source,
           status: row.status ?? 'staged',
           odds: toJson(row.odds),

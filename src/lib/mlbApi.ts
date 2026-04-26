@@ -1,4 +1,4 @@
-import { createDefaultBullpenWorkload, getDefaultStarter, getStartersForTeam, TEAMS } from './mlbModel'
+import { createDefaultBullpenWorkload, getStartersForTeam, TEAMS } from './mlbModel'
 import { PROXY_BASE_URL } from './proxyConfig'
 import { buildTeamRatingsFromStats, type TeamStatMap } from './teamRatings'
 import type {
@@ -363,30 +363,69 @@ export function normalizeMlbTeam(team: LiveTeam | undefined): TeamAbbr | null {
   return null
 }
 
+function makeTbdStarter(team: TeamAbbr): StarterStats {
+  return {
+    id: `${team}-tbd`,
+    team,
+    name: 'TBD',
+    hand: 'R',
+    era: 4.5,
+    fip: 4.35,
+    whip: 1.3,
+    kRate: 21.0,
+    bbRate: 8.5,
+    hr9: 1.15,
+    inningsPerStart: 5.0,
+    pitchingRating: 78,
+    role: 'Back-End',
+    recentPitchCount: 85,
+    daysRest: 5,
+  }
+}
+
+// Resolves a named pitcher (from paste overrides or any trusted source) to StarterStats.
+// Trusts the name fully — does not enforce team validation.
+export function resolveStarterByName(name: string, team: TeamAbbr, starterStatsMap?: StarterStatsMap): StarterStats {
+  // Prefer seed hand since the stats map always defaults to 'R'
+  const seeds = getStartersForTeam(team)
+  const exactSeed = seeds.find((s) => s.name.toLowerCase() === name.toLowerCase())
+  const hand: 'L' | 'R' = exactSeed?.hand ?? 'R'
+
+  const liveStats = starterStatsMap?.get(name.toLowerCase())
+  if (liveStats) return { ...liveStats, hand }
+
+  if (exactSeed) return exactSeed
+
+  return { ...makeTbdStarter(team), name, hand }
+}
+
 export function resolveLiveStarter(
   team: TeamAbbr,
   probablePitcher: LivePitcher | undefined,
   starterStatsMap?: StarterStatsMap,
+  overrideName?: string,
 ): StarterStats {
+  // Paste import is highest priority
+  if (overrideName) return resolveStarterByName(overrideName, team, starterStatsMap)
+
   const liveName = probablePitcher?.fullName?.trim()
-  if (!liveName) return getDefaultStarter(team)
+  if (!liveName) return makeTbdStarter(team)
 
   const hand: 'L' | 'R' = probablePitcher?.pitchingHand?.code?.toUpperCase() === 'L' ? 'L' : 'R'
 
   const liveStats = starterStatsMap?.get(liveName.toLowerCase())
-  if (liveStats) return { ...liveStats, hand }
+  if (liveStats) {
+    // If season stats show this pitcher on a different team, the API has stale data — fall back to TBD
+    if (liveStats.team !== team) return makeTbdStarter(team)
+    return { ...liveStats, hand }
+  }
 
   const starters = getStartersForTeam(team)
   const exact = starters.find((starter) => starter.name.toLowerCase() === liveName.toLowerCase())
   if (exact) return exact
 
-  const baseStarter = getDefaultStarter(team)
-  return {
-    ...baseStarter,
-    id: `${team}-${liveName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-    name: liveName,
-    hand,
-  }
+  // Name known but no stats available — use TBD stats with the known name
+  return { ...makeTbdStarter(team), name: liveName, hand }
 }
 
 async function fetchSchedule(date: string): Promise<LiveScheduleResponse> {
@@ -488,6 +527,7 @@ export async function fetchLiveScheduleRows(
     oddsFetcher?: OddsFetcher
     sharpFetcher?: SharpFetcher
     starterStatsFetcher?: () => Promise<StarterStatsMap>
+    starterOverrideMap?: Partial<Record<string, { awayStarter?: string | null; homeStarter?: string | null }>>
     liveTeams?: Record<TeamAbbr, TeamStats>
   } = {},
 ): Promise<ScheduleRow[]> {
@@ -505,10 +545,11 @@ export async function fetchLiveScheduleRows(
   const oddsMap = await (options.oddsFetcher ?? fetchEspnOddsMap)(date)
   const sharpMap = await (options.sharpFetcher ?? fetchEspnSharpSignalsMap)(date)
   const liveTeams = options.liveTeams
+  const starterOverrideMap = options.starterOverrideMap
 
   const rows = await Promise.all(
     games.map(async (game) =>
-      buildLiveScheduleRow(game, weatherFetcher, lineupFetcher, oddsMap, sharpMap, starterStatsMap, liveTeams),
+      buildLiveScheduleRow(game, weatherFetcher, lineupFetcher, oddsMap, sharpMap, starterStatsMap, liveTeams, starterOverrideMap),
     ),
   )
 
@@ -667,6 +708,7 @@ async function buildLiveScheduleRow(
   sharpMap: Partial<Record<string, SharpSignalInput>>,
   starterStatsMap: StarterStatsMap,
   liveTeams?: Record<TeamAbbr, TeamStats>,
+  starterOverrideMap?: Partial<Record<string, { awayStarter?: string | null; homeStarter?: string | null }>>,
 ): Promise<ScheduleRow | null> {
   const awayTeam = normalizeMlbTeam(game.teams?.away?.team)
   const homeTeam = normalizeMlbTeam(game.teams?.home?.team)
@@ -679,9 +721,10 @@ async function buildLiveScheduleRow(
   const now = new Date().toISOString()
   const weather = await weatherFetcher(homeTeam, gameDate)
   const lineup = game.gamePk ? await lineupFetcher(game.gamePk) : null
-  const awayStarter = resolveLiveStarter(awayTeam, game.teams?.away?.probablePitcher, starterStatsMap)
-  const homeStarter = resolveLiveStarter(homeTeam, game.teams?.home?.probablePitcher, starterStatsMap)
   const lookup = oddsLookupKey(homeTeam, awayTeam)
+  const starterOverride = starterOverrideMap?.[lookup]
+  const awayStarter = resolveLiveStarter(awayTeam, game.teams?.away?.probablePitcher, starterStatsMap, starterOverride?.awayStarter ?? undefined)
+  const homeStarter = resolveLiveStarter(homeTeam, game.teams?.home?.probablePitcher, starterStatsMap, starterOverride?.homeStarter ?? undefined)
   const odds = oddsMap[lookup] ?? defaultOddsForGame(homeTeam, awayTeam)
   const sharpInput = sharpMap[lookup] ?? null
 

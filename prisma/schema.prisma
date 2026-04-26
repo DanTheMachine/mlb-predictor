@@ -64,6 +64,8 @@ model MlbOddsOverride {
   lookupKey    String
   awayTeam     String
   homeTeam     String
+  awayStarter  String?
+  homeStarter  String?
   source       String
   status       String   @default("staged")
   odds         Json

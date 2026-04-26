@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { analyzeBetting } from '../lib/betting'
 import { parseBulkOdds } from '../lib/bulkOddsParser'
 import { buildCompositeRecommendation, buildCompositeRecommendations } from '../lib/compositeRecommendation'
-import { fetchCompletedGameResults, fetchLiveScheduleRows } from '../lib/mlbApi'
+import { fetchCompletedGameResults, fetchLiveScheduleRows, fetchStarterStatsMap, resolveStarterByName } from '../lib/mlbApi'
+import type { StarterStatsMap } from '../lib/mlbApi'
 import { fetchStoredPredictions } from '../lib/automationApi'
 import type { StoredPredictionRow } from '../lib/automationApi'
 import {
@@ -44,6 +45,7 @@ export function ScheduleAnalysis({
   fetchTeamData,
 }: ScheduleAnalysisProps) {
   const [rows, setRows] = useState<ScheduleRow[]>([])
+  const starterStatsMapRef = useRef<StarterStatsMap>(new Map())
   const [bulkPaste, setBulkPaste] = useState('')
   const [bulkStatus, setBulkStatus] = useState('Load the sample slate or paste sportsbook odds to build the board.')
   const [bulkStatusTone, setBulkStatusTone] = useState<'neutral' | 'success' | 'error'>('neutral')
@@ -143,28 +145,45 @@ export function ScheduleAnalysis({
   const handleBulkImport = () => {
     try {
       const games = parseBulkOdds(bulkPaste)
-      const incomingByMatchup = new Map(games.map((game) => [`${game.awayAbbr}-${game.homeAbbr}`, game.odds]))
+      const map = starterStatsMapRef.current
+
+      // Build per-matchup queues so doubleheaders are consumed in order, not overwritten
+      const incomingQueues = new Map<string, typeof games>()
+      for (const game of games) {
+        const key = `${game.awayAbbr}-${game.homeAbbr}`
+        if (!incomingQueues.has(key)) incomingQueues.set(key, [])
+        incomingQueues.get(key)!.push(game)
+      }
 
       setRows((prev) => {
         if (!prev.length) {
-          return games.map((game, index) => createIntelligenceRow(game.awayAbbr, game.homeAbbr, `${7 + index}:10 PM`, index, game.odds))
+          return games.map((game, index) => {
+            const row = createIntelligenceRow(game.awayAbbr, game.homeAbbr, `${7 + index}:10 PM`, index, game.odds)
+            return {
+              ...row,
+              awayStarter: game.awayStarter ? resolveStarterByName(game.awayStarter, game.awayAbbr, map) : row.awayStarter,
+              homeStarter: game.homeStarter ? resolveStarterByName(game.homeStarter, game.homeAbbr, map) : row.homeStarter,
+            }
+          })
         }
 
-        const updated = prev.map((row) => {
+        const cursors = new Map<string, number>()
+        return prev.map((row) => {
           const key = `${row.game.awayTeam}-${row.game.homeTeam}`
-          const importedOdds = incomingByMatchup.get(key)
-          if (!importedOdds) return row
+          const queue = incomingQueues.get(key)
+          if (!queue) return row
+          const cursor = cursors.get(key) ?? 0
+          const imported = queue[cursor]
+          if (!imported) return row
+          cursors.set(key, cursor + 1)
 
           return {
             ...row,
-            odds: {
-              ...importedOdds,
-              source: 'manual' as const,
-            },
+            odds: { ...imported.odds, source: 'manual' as const },
+            awayStarter: imported.awayStarter ? resolveStarterByName(imported.awayStarter, row.game.awayTeam, map) : row.awayStarter,
+            homeStarter: imported.homeStarter ? resolveStarterByName(imported.homeStarter, row.game.homeTeam, map) : row.homeStarter,
           }
         })
-
-        return updated
       })
       setHasRunAllSims(false)
       setBulkStatus(`Lines updated successfully at ${formatTimestamp(new Date().toISOString())}. Games Updated: ${games.length}`)
@@ -184,7 +203,12 @@ export function ScheduleAnalysis({
     setLiveLoadFailed(false)
 
     try {
-      const slateRows = await fetchLiveScheduleRows(liveDate, { liveTeams: teams })
+      const season = Number(liveDate.slice(0, 4)) || new Date().getFullYear()
+      const [slateRows, starterStatsMap] = await Promise.all([
+        fetchLiveScheduleRows(liveDate, { liveTeams: teams }),
+        fetchStarterStatsMap(season),
+      ])
+      starterStatsMapRef.current = starterStatsMap
       setRows(slateRows)
       setHasRunAllSims(false)
       setExpandedIdx(null)

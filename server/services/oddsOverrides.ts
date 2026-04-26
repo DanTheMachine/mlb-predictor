@@ -10,6 +10,8 @@ export type PersistedOddsOverride = {
   lookupKey: string
   awayTeam: TeamAbbr
   homeTeam: TeamAbbr
+  awayStarter?: string | null
+  homeStarter?: string | null
   source: string
   status: string
   odds: OddsInput
@@ -33,15 +35,24 @@ export async function importBulkOddsOverrides(args: {
   const source = (args.source ?? 'manual-paste').trim() || 'manual-paste'
   const parsed = parseBulkOdds(args.raw)
 
-  const rows = parsed.map((game) => ({
-    lookupKey: buildLookupKey(date, game.homeAbbr, game.awayAbbr),
-    awayTeam: game.awayAbbr,
-    homeTeam: game.homeAbbr,
-    source,
-    status: 'staged',
-    odds: game.odds,
-    metadata: args.metadata ?? null,
-  }))
+  const matchupCounts = new Map<string, number>()
+  const rows = parsed.map((game) => {
+    const baseKey = buildLookupKey(date, game.homeAbbr, game.awayAbbr)
+    const count = (matchupCounts.get(baseKey) ?? 0) + 1
+    matchupCounts.set(baseKey, count)
+    const lookupKey = count === 1 ? baseKey : `${baseKey}_${count}`
+    return {
+      lookupKey,
+      awayTeam: game.awayAbbr,
+      homeTeam: game.homeAbbr,
+      awayStarter: game.awayStarter ?? null,
+      homeStarter: game.homeStarter ?? null,
+      source,
+      status: 'staged',
+      odds: game.odds,
+      metadata: args.metadata ?? null,
+    }
+  })
 
   await saveOddsOverrides(date, rows)
 
@@ -63,6 +74,8 @@ export async function listOddsOverrides(dateInput?: string) {
         lookupKey: row.lookupKey,
         awayTeam: row.awayTeam as TeamAbbr,
         homeTeam: row.homeTeam as TeamAbbr,
+        awayStarter: row.awayStarter,
+        homeStarter: row.homeStarter,
         source: row.source,
         status: row.status,
         odds: row.odds as unknown as OddsInput,
