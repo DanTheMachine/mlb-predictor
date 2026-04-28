@@ -3,7 +3,8 @@ import path from 'node:path'
 
 import { analyzeBetting } from '../../src/lib/betting.js'
 import { buildCompositeRecommendation } from '../../src/lib/compositeRecommendation.js'
-import { fetchCompletedGameResults, fetchLiveScheduleRows, fetchTeamRatings } from '../../src/lib/mlbApi.js'
+import { fetchCompletedGameResults, fetchLiveScheduleRows, fetchStarterStatsMap, resolveStarterByName, fetchTeamRatings } from '../../src/lib/mlbApi.js'
+import type { StarterStatsMap } from '../../src/lib/mlbApi.js'
 import { predictGame } from '../../src/lib/mlbModel.js'
 import { DEFAULT_THRESHOLDS, evaluatePredictions, type ParsedPredictionRow, type ParsedResultRow } from '../../src/lib/modelEvaluation.js'
 import type { LineupConfidence, ScheduleRow, TeamAbbr, TeamStats } from '../../src/lib/mlbTypes.js'
@@ -84,9 +85,11 @@ export async function refreshTeamStats(dateInput?: string) {
 
 export async function loadSlate(dateInput?: string, options: PredictionRunOptions = {}, liveTeams?: Record<TeamAbbr, TeamStats>) {
   const date = assertDateInput(dateInput)
-  const rows = await fetchLiveScheduleRows(date, { liveTeams })
+  const season = Number(date.slice(0, 4)) || new Date().getFullYear()
+  const starterStatsMap = await fetchStarterStatsMap(season)
+  const rows = await fetchLiveScheduleRows(date, { liveTeams, starterStatsFetcher: () => Promise.resolve(starterStatsMap) })
   const sharpRows = await loadSharpSignals(date, rows)
-  const finalRows = options.useOddsOverrides ? await applyOddsOverrides(date, sharpRows, options.overrideSource) : sharpRows
+  const finalRows = options.useOddsOverrides ? await applyOddsOverrides(date, sharpRows, options.overrideSource, starterStatsMap) : sharpRows
   await saveSlateRows(date, finalRows)
   await saveOddsAndSharp(date, finalRows)
   return finalRows
@@ -97,9 +100,13 @@ export async function loadSharpSignals(dateInput: string, rows: ScheduleRow[]) {
   const provider = resolveSharpProvider(appConfig.sharpProvider)
   const signals = await provider.load(date, rows)
   const byKey = new Map(signals.map((signal) => [signal.lookupKey, signal.normalized]))
+  const seenCounts = new Map<string, number>()
 
   return rows.map((row) => {
-    const lookupKey = buildLookupKey(date, row.game.homeTeam, row.game.awayTeam)
+    const baseKey = buildLookupKey(date, row.game.homeTeam, row.game.awayTeam)
+    const count = (seenCounts.get(baseKey) ?? 0) + 1
+    seenCounts.set(baseKey, count)
+    const lookupKey = count === 1 ? baseKey : `${baseKey}_${count}`
     return {
       ...row,
       sharpInput: byKey.get(lookupKey) ?? row.sharpInput,
@@ -112,6 +119,7 @@ export async function generatePredictions(dateInput?: string, options: Predictio
   const teamSnapshot = await refreshTeamStats(date)
   const slate = await loadSlate(date, options, teamSnapshot.teams)
 
+  const seenCounts = new Map<string, number>()
   const predictionRows = slate.map((row) => {
     const result = predictGame({
       homeTeam: teamSnapshot.teams[row.game.homeTeam],
@@ -134,6 +142,10 @@ export async function generatePredictions(dateInput?: string, options: Predictio
     const projectedRow = { ...row, result }
     const analysis = analyzeBetting(result, row.odds)
     const composite = buildCompositeRecommendation(projectedRow, analysis)
+    const baseKey = buildLookupKey(date, row.game.homeTeam, row.game.awayTeam)
+    const seqCount = (seenCounts.get(baseKey) ?? 0) + 1
+    seenCounts.set(baseKey, seqCount)
+    const lookupKey = seqCount === 1 ? baseKey : `${baseKey}_${seqCount}`
 
     return {
       date,
@@ -172,7 +184,7 @@ export async function generatePredictions(dateInput?: string, options: Predictio
       compositeScore: composite.score,
       compositeTier: composite.tier,
       compositeReasons: composite.reasons,
-      lookupKey: buildLookupKey(date, row.game.homeTeam, row.game.awayTeam),
+      lookupKey,
     } satisfies AutomationPredictionRow
   })
 
@@ -365,7 +377,7 @@ function freshnessLabel(timestamp?: string | null) {
   return timestamp ?? 'N/A'
 }
 
-async function applyOddsOverrides(date: string, rows: ScheduleRow[], source?: string) {
+async function applyOddsOverrides(date: string, rows: ScheduleRow[], source?: string, starterStatsMap?: StarterStatsMap) {
   const overrides = await getOddsOverridesForDate(date, {
     source,
     statuses: ['approved'],
@@ -373,18 +385,30 @@ async function applyOddsOverrides(date: string, rows: ScheduleRow[], source?: st
 
   if (!overrides.length) return rows
 
-  const byLookupKey = new Map(
-    overrides.map((override) => [override.lookupKey, override.odds as unknown as ScheduleRow['odds']]),
-  )
+  const byLookupKey = new Map(overrides.map((override) => [override.lookupKey, override]))
+  const matchupCounts = new Map<string, number>()
 
   return rows.map((row) => {
-    const lookupKey = buildLookupKey(date, row.game.homeTeam, row.game.awayTeam)
-    const overrideOdds = byLookupKey.get(lookupKey)
-    if (!overrideOdds) return row
-    return {
+    const baseKey = buildLookupKey(date, row.game.homeTeam, row.game.awayTeam)
+    const count = (matchupCounts.get(baseKey) ?? 0) + 1
+    matchupCounts.set(baseKey, count)
+    const lookupKey = count === 1 ? baseKey : `${baseKey}_${count}`
+    const override = byLookupKey.get(lookupKey)
+    if (!override) return row
+
+    const updatedRow: ScheduleRow = {
       ...row,
-      odds: overrideOdds,
+      odds: override.odds as unknown as ScheduleRow['odds'],
     }
+
+    if (override.awayStarter) {
+      updatedRow.awayStarter = resolveStarterByName(override.awayStarter, row.game.awayTeam, starterStatsMap)
+    }
+    if (override.homeStarter) {
+      updatedRow.homeStarter = resolveStarterByName(override.homeStarter, row.game.homeTeam, starterStatsMap)
+    }
+
+    return updatedRow
   })
 }
 

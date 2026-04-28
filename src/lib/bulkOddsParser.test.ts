@@ -129,6 +129,8 @@ U 8 ½
       {
         awayAbbr: 'STL',
         homeAbbr: 'WSH',
+        awayStarter: 'Michael McGreevy',
+        homeStarter: 'Miles Mikolas',
         odds: {
           source: 'manual',
           awayMoneyline: -115,
@@ -167,6 +169,128 @@ ATLANTA BRAVES 901 + 1.5 - 170 O 8.5 - 108 - 135 LOS ANGELES DODGERS 902 - 1.5 +
         },
       },
     ])
+  })
+
+  it('parses starter names from the header line before each game', () => {
+    const raw = `
+Aaron Nola/Chris Sale: BRVN | NSPA10:35 AM
+PHILADELPHIA PHILLIES
+951
++ 1 ½
+- 125
+O 8 ½
+- 105
++ 155
+ATLANTA BRAVES
+952
+- 1 ½
++ 115
+U 8 ½
+- 105
+- 175
+Connelly Early/Kyle Bradish: MASN | NSN+10:35 AM
+BOSTON RED SOX
+963
++ 1 ½
+- 170
+O 7 ½
+- 105
++ 125
+BALTIMORE ORIOLES
+964
+- 1 ½
++ 150
+U 7 ½
+- 105
+- 135
+`
+
+    const games = parseBulkOdds(raw)
+    expect(games[0]?.awayStarter).toBe('Aaron Nola')
+    expect(games[0]?.homeStarter).toBe('Chris Sale')
+    expect(games[1]?.awayStarter).toBe('Connelly Early')
+    expect(games[1]?.homeStarter).toBe('Kyle Bradish')
+  })
+
+  it('handles multi-word names and names with punctuation in headers', () => {
+    const raw = `
+J.T. Ginn/Kumar Rocker: NSCA | RASN11:35 AM
+OAKLAND ATHLETICS
+971
++ 1 ½
+- 185
+O 8 ½
+- 105
++ 105
+TEXAS RANGERS
+972
+- 1 ½
++ 165
+U 8 ½
+- 105
+- 115
+Simeon Woods Richardson/Jesse Scholtens: TWTV | RATV10:40 AM
+MINNESOTA TWINS
+967
++ 1 ½
+- 155
+O 8 ½
+- 110
++ 130
+TAMPA BAY RAYS
+968
+- 1 ½
++ 145
+U 8 ½
+Even
+- 140
+`
+
+    const games = parseBulkOdds(raw)
+    expect(games[0]?.awayStarter).toBe('J.T. Ginn')
+    expect(games[0]?.homeStarter).toBe('Kumar Rocker')
+    expect(games[1]?.awayStarter).toBe('Simeon Woods Richardson')
+    expect(games[1]?.homeStarter).toBe('Jesse Scholtens')
+  })
+
+  it('leaves starters undefined when game has no header or channel-only header', () => {
+    const raw = `
+PHILADELPHIA PHILLIES
+951
++ 1 ½
+- 125
+O 8 ½
+- 105
++ 155
+ATLANTA BRAVES
+952
+- 1 ½
++ 115
+U 8 ½
+- 105
+- 175
+ROTV | SNY2:00 PM
+COLORADO ROCKIES
+000
++ 1 ½
+- 130
+O 7 ½
+- 105
++ 160
+NEW YORK METS
+000
+- 1 ½
++ 120
+U 7 ½
+- 105
+- 180
+`
+
+    const games = parseBulkOdds(raw)
+    expect(games[0]?.awayStarter).toBeUndefined()
+    expect(games[0]?.homeStarter).toBeUndefined()
+    expect(games[1]?.awayStarter).toBeUndefined()
+    expect(games[1]?.homeStarter).toBeUndefined()
   })
 
   it('ignores extra labels between teams and market tokens', () => {

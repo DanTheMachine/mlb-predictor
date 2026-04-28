@@ -43,9 +43,13 @@ export async function saveSlateRows(date: string, rows: ScheduleRow[]) {
   const prisma = getPrismaClient()
   if (!prisma) return 0
 
+  const seenCounts = new Map<string, number>()
   await Promise.all(
     rows.map((row) => {
-      const lookupKey = `${date.replaceAll('-', '')}${row.game.homeTeam}${row.game.awayTeam}`
+      const baseKey = `${date.replaceAll('-', '')}${row.game.homeTeam}${row.game.awayTeam}`
+      const count = (seenCounts.get(baseKey) ?? 0) + 1
+      seenCounts.set(baseKey, count)
+      const lookupKey = count === 1 ? baseKey : `${baseKey}_${count}`
       return prisma.mlbSlateGame.upsert({
         where: {
           businessDate_lookupKey: {
@@ -125,9 +129,13 @@ export async function saveOddsAndSharp(date: string, rows: ScheduleRow[]) {
   const prisma = getPrismaClient()
   if (!prisma) return 0
 
+  const seenCounts = new Map<string, number>()
   await Promise.all(
     rows.flatMap((row) => {
-      const lookupKey = `${date.replaceAll('-', '')}${row.game.homeTeam}${row.game.awayTeam}`
+      const baseKey = `${date.replaceAll('-', '')}${row.game.homeTeam}${row.game.awayTeam}`
+      const count = (seenCounts.get(baseKey) ?? 0) + 1
+      seenCounts.set(baseKey, count)
+      const lookupKey = count === 1 ? baseKey : `${baseKey}_${count}`
       const writes: Promise<unknown>[] = [
         prisma.mlbMarketOddsSnapshot.upsert({
           where: {
@@ -188,6 +196,8 @@ export async function saveOddsOverrides(
     lookupKey: string
     awayTeam: TeamAbbr
     homeTeam: TeamAbbr
+    awayStarter?: string | null
+    homeStarter?: string | null
     source: string
     status?: string
     odds: OddsInput
@@ -211,6 +221,8 @@ export async function saveOddsOverrides(
         update: {
           awayTeam: row.awayTeam,
           homeTeam: row.homeTeam,
+          awayStarter: row.awayStarter ?? null,
+          homeStarter: row.homeStarter ?? null,
           status: row.status ?? 'staged',
           odds: toJson(row.odds),
           metadata: row.metadata ? toJson(row.metadata) : Prisma.JsonNull,
@@ -221,6 +233,8 @@ export async function saveOddsOverrides(
           lookupKey: row.lookupKey,
           awayTeam: row.awayTeam,
           homeTeam: row.homeTeam,
+          awayStarter: row.awayStarter ?? null,
+          homeStarter: row.homeStarter ?? null,
           source: row.source,
           status: row.status ?? 'staged',
           odds: toJson(row.odds),

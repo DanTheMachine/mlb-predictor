@@ -4,6 +4,8 @@ export type ParsedBulkGame = {
   awayAbbr: TeamAbbr
   homeAbbr: TeamAbbr
   odds: OddsInput
+  awayStarter?: string
+  homeStarter?: string
 }
 
 const BULK_NAME_MAP: Record<string, TeamAbbr> = {
@@ -88,6 +90,11 @@ const TEAM_NAME_PATTERNS = Object.keys(BULK_NAME_MAP)
 
 const TEAM_NAME_REGEX = new RegExp(`\\b(?:${TEAM_NAME_PATTERNS.join('|')})\\b`, 'gi')
 const BLOCK_TOKEN_REGEX = /(?:[OoUu]\s*\d+(?:\s*\.\d+)?|[+-]\s*\d+(?:\s*\.\d+)?|even|\d{3,4})/gi
+
+// Matches "FirstName LastName/FirstName LastName:" at the start of a header line.
+// Mixed-case names distinguish pitcher headers from all-caps channel codes.
+const STARTER_HEADER_REGEX =
+  /^([A-Z][A-Za-z.']+(?:\s+[A-Z][A-Za-z.']+)*)\s*\/\s*([A-Z][A-Za-z.']+(?:\s+[A-Z][A-Za-z.']+)*)\s*:/
 
 const normalizeFractionGlyphs = (value: string): string =>
   value
@@ -218,17 +225,20 @@ function parseLineBlocks(lines: string[], teamIndices: number[]) {
     const homeAbbr = BULK_NAME_MAP[lines[homeIndex]!.toUpperCase()]
     if (!awayAbbr || !homeAbbr) continue
 
+    const headerLine = awayIndex > 0 ? (lines[awayIndex - 1] ?? '') : ''
+    const starterMatch = STARTER_HEADER_REGEX.exec(headerLine)
+
     const awayBlock = sliceBlock(lines, awayIndex + 1, homeIndex)
     const nextBoundary = teamIndices[i + 2] ?? lines.length
     const homeBlock = sliceBlock(lines, homeIndex + 1, nextBoundary)
 
-    games.push(buildParsedGame(awayAbbr, homeAbbr, awayBlock, homeBlock))
+    games.push(buildParsedGame(awayAbbr, homeAbbr, awayBlock, homeBlock, starterMatch?.[1]?.trim(), starterMatch?.[2]?.trim()))
   }
 
   return games
 }
 
-function buildParsedGame(awayAbbr: TeamAbbr, homeAbbr: TeamAbbr, awayBlock: string[], homeBlock: string[]): ParsedBulkGame {
+function buildParsedGame(awayAbbr: TeamAbbr, homeAbbr: TeamAbbr, awayBlock: string[], homeBlock: string[], awayStarter?: string, homeStarter?: string): ParsedBulkGame {
   const [awayRunLineRaw, awayRunLineOddsRaw, awayTotalRaw, awayOverOddsRaw, awayMoneylineRaw] = awayBlock
   const [homeRunLineRaw, homeRunLineOddsRaw, homeTotalRaw, homeUnderOddsRaw, homeMoneylineRaw] = homeBlock
 
@@ -250,6 +260,8 @@ function buildParsedGame(awayAbbr: TeamAbbr, homeAbbr: TeamAbbr, awayBlock: stri
       overOdds: parseOddsNum(awayOverOddsRaw) ?? -110,
       underOdds: parseOddsNum(homeUnderOddsRaw) ?? -110,
     },
+    ...(awayStarter ? { awayStarter } : {}),
+    ...(homeStarter ? { homeStarter } : {}),
   }
 }
 
