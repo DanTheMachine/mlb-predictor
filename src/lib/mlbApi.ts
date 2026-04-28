@@ -602,9 +602,15 @@ export async function fetchCompletedGameResults(date: string): Promise<GradingRe
   const schedule = await fetchSchedule(date)
   const games = schedule.dates?.flatMap((entry) => entry.games ?? []) ?? []
 
-  return games
+  const rows = games
     .map((game) => toGradingResultRow(game, date))
     .filter((row): row is GradingResultRow => row !== null)
+  const seenCounts = new Map<string, number>()
+  return rows.map((row) => {
+    const count = (seenCounts.get(row.lookupKey) ?? 0) + 1
+    seenCounts.set(row.lookupKey, count)
+    return count === 1 ? row : { ...row, lookupKey: `${row.lookupKey}_${count}` }
+  })
 }
 
 export async function fetchTeamRatings(season: number): Promise<TeamRatingsSnapshot> {

@@ -100,9 +100,13 @@ export async function loadSharpSignals(dateInput: string, rows: ScheduleRow[]) {
   const provider = resolveSharpProvider(appConfig.sharpProvider)
   const signals = await provider.load(date, rows)
   const byKey = new Map(signals.map((signal) => [signal.lookupKey, signal.normalized]))
+  const seenCounts = new Map<string, number>()
 
   return rows.map((row) => {
-    const lookupKey = buildLookupKey(date, row.game.homeTeam, row.game.awayTeam)
+    const baseKey = buildLookupKey(date, row.game.homeTeam, row.game.awayTeam)
+    const count = (seenCounts.get(baseKey) ?? 0) + 1
+    seenCounts.set(baseKey, count)
+    const lookupKey = count === 1 ? baseKey : `${baseKey}_${count}`
     return {
       ...row,
       sharpInput: byKey.get(lookupKey) ?? row.sharpInput,
@@ -115,6 +119,7 @@ export async function generatePredictions(dateInput?: string, options: Predictio
   const teamSnapshot = await refreshTeamStats(date)
   const slate = await loadSlate(date, options, teamSnapshot.teams)
 
+  const seenCounts = new Map<string, number>()
   const predictionRows = slate.map((row) => {
     const result = predictGame({
       homeTeam: teamSnapshot.teams[row.game.homeTeam],
@@ -137,6 +142,10 @@ export async function generatePredictions(dateInput?: string, options: Predictio
     const projectedRow = { ...row, result }
     const analysis = analyzeBetting(result, row.odds)
     const composite = buildCompositeRecommendation(projectedRow, analysis)
+    const baseKey = buildLookupKey(date, row.game.homeTeam, row.game.awayTeam)
+    const seqCount = (seenCounts.get(baseKey) ?? 0) + 1
+    seenCounts.set(baseKey, seqCount)
+    const lookupKey = seqCount === 1 ? baseKey : `${baseKey}_${seqCount}`
 
     return {
       date,
@@ -175,7 +184,7 @@ export async function generatePredictions(dateInput?: string, options: Predictio
       compositeScore: composite.score,
       compositeTier: composite.tier,
       compositeReasons: composite.reasons,
-      lookupKey: buildLookupKey(date, row.game.homeTeam, row.game.awayTeam),
+      lookupKey,
     } satisfies AutomationPredictionRow
   })
 

@@ -43,9 +43,13 @@ export async function saveSlateRows(date: string, rows: ScheduleRow[]) {
   const prisma = getPrismaClient()
   if (!prisma) return 0
 
+  const seenCounts = new Map<string, number>()
   await Promise.all(
     rows.map((row) => {
-      const lookupKey = `${date.replaceAll('-', '')}${row.game.homeTeam}${row.game.awayTeam}`
+      const baseKey = `${date.replaceAll('-', '')}${row.game.homeTeam}${row.game.awayTeam}`
+      const count = (seenCounts.get(baseKey) ?? 0) + 1
+      seenCounts.set(baseKey, count)
+      const lookupKey = count === 1 ? baseKey : `${baseKey}_${count}`
       return prisma.mlbSlateGame.upsert({
         where: {
           businessDate_lookupKey: {
@@ -125,9 +129,13 @@ export async function saveOddsAndSharp(date: string, rows: ScheduleRow[]) {
   const prisma = getPrismaClient()
   if (!prisma) return 0
 
+  const seenCounts = new Map<string, number>()
   await Promise.all(
     rows.flatMap((row) => {
-      const lookupKey = `${date.replaceAll('-', '')}${row.game.homeTeam}${row.game.awayTeam}`
+      const baseKey = `${date.replaceAll('-', '')}${row.game.homeTeam}${row.game.awayTeam}`
+      const count = (seenCounts.get(baseKey) ?? 0) + 1
+      seenCounts.set(baseKey, count)
+      const lookupKey = count === 1 ? baseKey : `${baseKey}_${count}`
       const writes: Promise<unknown>[] = [
         prisma.mlbMarketOddsSnapshot.upsert({
           where: {
