@@ -50,7 +50,7 @@ export async function importBulkOddsOverrides(args: {
       source,
       status: 'staged',
       odds: game.odds,
-      metadata: args.metadata ?? null,
+      metadata: { ...(args.metadata ?? {}), ...(game.gameTime ? { gameTime: game.gameTime } : {}) },
     }
   })
 

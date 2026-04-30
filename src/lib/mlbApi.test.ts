@@ -243,4 +243,91 @@ describe('mlbApi', () => {
       },
     ])
   })
+
+  it('assigns _2 suffix to doubleheader game 2 in fetchCompletedGameResults', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        dates: [
+          {
+            games: [
+              {
+                gamePk: 1,
+                gameDate: '2026-04-30T13:35:00Z',
+                officialDate: '2026-04-30',
+                gameNumber: 1,
+                status: { abstractGameState: 'Final', detailedState: 'Final' },
+                teams: {
+                  away: { team: { id: 117, abbreviation: 'HOU' }, score: 3 },
+                  home: { team: { id: 110, abbreviation: 'BAL' }, score: 5 },
+                },
+              },
+              {
+                gamePk: 2,
+                gameDate: '2026-04-30T18:05:00Z',
+                officialDate: '2026-04-30',
+                gameNumber: 2,
+                status: { abstractGameState: 'Final', detailedState: 'Final' },
+                teams: {
+                  away: { team: { id: 117, abbreviation: 'HOU' }, score: 4 },
+                  home: { team: { id: 110, abbreviation: 'BAL' }, score: 2 },
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    } as Response)
+
+    const results = await fetchCompletedGameResults('2026-04-30')
+    expect(results).toHaveLength(2)
+    expect(results[0]?.lookupKey).toBe('20260430BALHOU')
+    expect(results[1]?.lookupKey).toBe('20260430BALHOU_2')
+  })
+
+  it('builds two separate schedule rows for a doubleheader', async () => {
+    const rows = await fetchLiveScheduleRows('2026-04-30', {
+      scheduleFetcher: async () => ({
+        dates: [
+          {
+            games: [
+              {
+                gamePk: 1,
+                gameDate: '2026-04-30T13:35:00Z',
+                gameNumber: 1,
+                teams: {
+                  away: { team: { id: 117, abbreviation: 'HOU' }, probablePitcher: { fullName: 'Lance McCullers Jr.', pitchingHand: { code: 'R' } } },
+                  home: { team: { id: 110, abbreviation: 'BAL' }, probablePitcher: { fullName: 'Brandon Young', pitchingHand: { code: 'R' } } },
+                },
+              },
+              {
+                gamePk: 2,
+                gameDate: '2026-04-30T18:05:00Z',
+                gameNumber: 2,
+                teams: {
+                  away: { team: { id: 117, abbreviation: 'HOU' }, probablePitcher: { fullName: 'Framber Valdez', pitchingHand: { code: 'L' } } },
+                  home: { team: { id: 110, abbreviation: 'BAL' }, probablePitcher: { fullName: 'Corbin Burnes', pitchingHand: { code: 'R' } } },
+                },
+              },
+            ],
+          },
+        ],
+      }),
+      weatherFetcher: async () => null,
+      lineupFetcher: async () => null,
+      oddsFetcher: async () => ({
+        'BAL-HOU': { source: 'espn', homeMoneyline: -120, awayMoneyline: 110, runLine: -1.5, runLineHomeOdds: 135, runLineAwayOdds: -160, overUnder: 9.5, overOdds: -110, underOdds: -110 },
+        'BAL-HOU_2': { source: 'espn', homeMoneyline: -130, awayMoneyline: 120, runLine: -1.5, runLineHomeOdds: 145, runLineAwayOdds: -170, overUnder: 8.5, overOdds: -105, underOdds: -115 },
+      }),
+      sharpFetcher: async () => ({}),
+    })
+
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.game.awayTeam).toBe('HOU')
+    expect(rows[0]?.game.homeTeam).toBe('BAL')
+    expect(rows[0]?.awayStarter.name).toBe('Lance McCullers Jr.')
+    expect(rows[0]?.odds.overUnder).toBe(9.5)
+    expect(rows[1]?.awayStarter.name).toBe('Framber Valdez')
+    expect(rows[1]?.odds.overUnder).toBe(8.5)
+  })
 })

@@ -348,8 +348,24 @@ export async function savePredictions(runId: string | null, date: string, rows: 
   const prisma = getPrismaClient()
   if (!prisma || !runId) return 0
 
+  // Deduplicate by lookupKey so concurrent upserts never silently overwrite
+  // each other (e.g., doubleheader game 2 clobbering game 1).
+  const seen = new Set<string>()
+  const deduped = rows.filter((row) => {
+    if (seen.has(row.lookupKey)) {
+      console.warn(`[savePredictions] duplicate lookupKey skipped: ${row.lookupKey}`)
+      return false
+    }
+    seen.add(row.lookupKey)
+    return true
+  })
+
+  if (deduped.length !== rows.length) {
+    console.warn(`[savePredictions] ${rows.length - deduped.length} duplicate row(s) dropped before save`)
+  }
+
   await Promise.all(
-    rows.map((row) =>
+    deduped.map((row) =>
       prisma.mlbPrediction.upsert({
         where: {
           predictionRunId_lookupKey: {
@@ -374,7 +390,7 @@ export async function savePredictions(runId: string | null, date: string, rows: 
     ),
   )
 
-  return rows.length
+  return deduped.length
 }
 
 export async function updatePredictionRunExports(runId: string | null, data: { exportPath?: string; resultsPath?: string; reviewStatus?: string }) {

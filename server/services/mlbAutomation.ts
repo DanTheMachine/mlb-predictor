@@ -88,8 +88,10 @@ export async function loadSlate(dateInput?: string, options: PredictionRunOption
   const season = Number(date.slice(0, 4)) || new Date().getFullYear()
   const starterStatsMap = await fetchStarterStatsMap(season)
   const rows = await fetchLiveScheduleRows(date, { liveTeams, starterStatsFetcher: () => Promise.resolve(starterStatsMap) })
+  console.log(`[loadSlate] fetchLiveScheduleRows → ${rows.length} rows`)
   const sharpRows = await loadSharpSignals(date, rows)
   const finalRows = options.useOddsOverrides ? await applyOddsOverrides(date, sharpRows, options.overrideSource, starterStatsMap) : sharpRows
+  console.log(`[loadSlate] finalRows after overrides → ${finalRows.length} rows`)
   await saveSlateRows(date, finalRows)
   await saveOddsAndSharp(date, finalRows)
   return finalRows
@@ -188,6 +190,8 @@ export async function generatePredictions(dateInput?: string, options: Predictio
     } satisfies AutomationPredictionRow
   })
 
+  console.log(`[generatePredictions] ${predictionRows.length} rows generated:`, predictionRows.map((r) => r.lookupKey))
+
   const summary = {
     totalGames: predictionRows.length,
     dbPersisted: isDbConfigured(),
@@ -197,7 +201,10 @@ export async function generatePredictions(dateInput?: string, options: Predictio
   }
 
   const run = await createPredictionRun(date, CURRENT_MODEL_VERSION, summary)
-  await savePredictions(run?.id ?? null, date, predictionRows)
+  const saved = await savePredictions(run?.id ?? null, date, predictionRows)
+  if (saved !== predictionRows.length) {
+    console.warn(`[generatePredictions] expected to save ${predictionRows.length} rows but saved ${saved} — duplicate lookupKeys in slate`)
+  }
 
   return {
     date,
@@ -377,6 +384,17 @@ function freshnessLabel(timestamp?: string | null) {
   return timestamp ?? 'N/A'
 }
 
+function parseTimeToMinutes(time: string): number {
+  const match = time.match(/(\d+):(\d+)\s*(AM|PM)/i)
+  if (!match || !match[1] || !match[2] || !match[3]) return -1
+  let hours = parseInt(match[1], 10)
+  const minutes = parseInt(match[2], 10)
+  const meridiem = match[3].toUpperCase()
+  if (meridiem === 'PM' && hours !== 12) hours += 12
+  if (meridiem === 'AM' && hours === 12) hours = 0
+  return hours * 60 + minutes
+}
+
 async function applyOddsOverrides(date: string, rows: ScheduleRow[], source?: string, starterStatsMap?: StarterStatsMap) {
   const overrides = await getOddsOverridesForDate(date, {
     source,
@@ -385,15 +403,89 @@ async function applyOddsOverrides(date: string, rows: ScheduleRow[], source?: st
 
   if (!overrides.length) return rows
 
-  const byLookupKey = new Map(overrides.map((override) => [override.lookupKey, override]))
-  const matchupCounts = new Map<string, number>()
+  // Group overrides by base matchup key (strip _N suffix).
+  const byMatchup = new Map<string, typeof overrides>()
+  for (const override of overrides) {
+    const baseKey = override.lookupKey.replace(/_\d+$/, '')
+    const list = byMatchup.get(baseKey) ?? []
+    list.push(override)
+    byMatchup.set(baseKey, list)
+  }
 
-  return rows.map((row) => {
+  // Group row indices by base matchup key (preserving slate order).
+  const rowIndicesByMatchup = new Map<string, number[]>()
+  rows.forEach((row, idx) => {
     const baseKey = buildLookupKey(date, row.game.homeTeam, row.game.awayTeam)
-    const count = (matchupCounts.get(baseKey) ?? 0) + 1
-    matchupCounts.set(baseKey, count)
-    const lookupKey = count === 1 ? baseKey : `${baseKey}_${count}`
-    const override = byLookupKey.get(lookupKey)
+    const list = rowIndicesByMatchup.get(baseKey) ?? []
+    list.push(idx)
+    rowIndicesByMatchup.set(baseKey, list)
+  })
+
+  // Pre-compute which override (if any) each row index receives.
+  // Strategy:
+  //   1. Time matching (within 90 min) when overrides have a stored gameTime.
+  //      Handles future-dated or postponed games where the API eventually has
+  //      correct times.
+  //   2. Align-from-right when times are missing or all deltas exceed 90 min.
+  //      When only N overrides exist for M slate rows (N < M), the paste is
+  //      missing the earliest games because they have already started and were
+  //      removed from the sportsbook.  Assign overrides to the last N rows so
+  //      the upcoming games get the correct odds/starters.
+  const rowOverrideMap = new Map<number, (typeof overrides)[number]>()
+
+  for (const [baseKey, candidates] of byMatchup) {
+    const slateIndices = rowIndicesByMatchup.get(baseKey) ?? []
+    if (slateIndices.length === 0 || candidates.length === 0) continue
+
+    const timedCandidates = candidates.filter((c) => {
+      const t = (c.metadata as Record<string, unknown> | null)?.gameTime
+      return typeof t === 'string' && t.length > 0
+    })
+
+    if (timedCandidates.length > 0) {
+      // Try time-proximity matching for each slate row.
+      const assigned = new Set<typeof overrides[number]>()
+      for (const idx of slateIndices) {
+        const slateMin = parseTimeToMinutes(rows[idx]!.game.gameTime)
+        let best: (typeof overrides)[number] | undefined
+        let bestDelta = Infinity
+        for (const candidate of timedCandidates) {
+          if (assigned.has(candidate)) continue
+          const overrideMin = parseTimeToMinutes((candidate.metadata as Record<string, unknown>).gameTime as string)
+          const delta = Math.abs(overrideMin - slateMin)
+          if (delta < bestDelta) {
+            bestDelta = delta
+            best = candidate
+          }
+        }
+        // Only accept if within 90 minutes (guards against timezone mismatches or
+        // stale MLB API placeholder times for doubleheader game 2).
+        if (best && bestDelta <= 90) {
+          rowOverrideMap.set(idx, best)
+          assigned.add(best)
+        }
+      }
+
+      // Fall back to align-from-right for any rows that got no time match.
+      const unmatched = slateIndices.filter((idx) => !rowOverrideMap.has(idx))
+      const unused = candidates.filter((c) => !assigned.has(c))
+      const alignStart = unmatched.length - unused.length
+      unused.forEach((candidate, i) => {
+        const idx = unmatched[alignStart + i]
+        if (idx !== undefined) rowOverrideMap.set(idx, candidate)
+      })
+    } else {
+      // No stored times — align overrides to the last N slate rows.
+      const alignStart = slateIndices.length - candidates.length
+      candidates.forEach((candidate, i) => {
+        const idx = slateIndices[alignStart + i]
+        if (idx !== undefined) rowOverrideMap.set(idx, candidate)
+      })
+    }
+  }
+
+  return rows.map((row, idx) => {
+    const override = rowOverrideMap.get(idx)
     if (!override) return row
 
     const updatedRow: ScheduleRow = {
@@ -401,10 +493,10 @@ async function applyOddsOverrides(date: string, rows: ScheduleRow[], source?: st
       odds: override.odds as unknown as ScheduleRow['odds'],
     }
 
-    if (override.awayStarter) {
+    if (override.awayStarter && row.awayStarter.name === 'TBD') {
       updatedRow.awayStarter = resolveStarterByName(override.awayStarter, row.game.awayTeam, starterStatsMap)
     }
-    if (override.homeStarter) {
+    if (override.homeStarter && row.homeStarter.name === 'TBD') {
       updatedRow.homeStarter = resolveStarterByName(override.homeStarter, row.game.homeTeam, starterStatsMap)
     }
 

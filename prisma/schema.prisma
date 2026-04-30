@@ -127,10 +127,84 @@ model PredictionRun {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   mlbPredictions MlbPrediction[]
+  nbaPredictions NbaPrediction[]
   predictionFiles PredictionFile[]
   resultFiles     ResultFile[]
 
   @@index([sport, businessDate, createdAt(sort: Desc)])
+}
+
+model NbaTeamStatSnapshot {
+  id           String   @id @default(cuid())
+  businessDate DateTime
+  sourceSeason Int
+  fetchedAt    DateTime
+  payload      Json
+  createdAt    DateTime @default(now())
+
+  @@unique([businessDate, sourceSeason])
+  @@map("NbaTeamStatSnapshot")
+}
+
+model NbaSlateGame {
+  id           String   @id @default(cuid())
+  businessDate DateTime
+  lookupKey    String
+  awayTeam     String
+  homeTeam     String
+  gameTime     DateTime
+  gameDateIso  String
+  status       String   @default("scheduled")
+  context      Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, lookupKey])
+  @@map("NbaSlateGame")
+}
+
+model NbaMarketOddsSnapshot {
+  id           String   @id @default(cuid())
+  businessDate DateTime
+  lookupKey    String
+  source       String
+  odds         Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessDate, lookupKey, source])
+  @@map("NbaMarketOddsSnapshot")
+}
+
+model NbaPrediction {
+  id              String        @id @default(cuid())
+  predictionRunId String
+  businessDate    DateTime
+  lookupKey       String
+  awayTeam        String
+  homeTeam        String
+  payload         Json
+  createdAt       DateTime      @default(now())
+  predictionRun   PredictionRun @relation(fields: [predictionRunId], references: [id], onDelete: Cascade)
+
+  @@unique([predictionRunId, lookupKey])
+  @@index([businessDate, lookupKey])
+  @@map("NbaPrediction")
+}
+
+model NbaGameResult {
+  id           String   @id @default(cuid())
+  businessDate DateTime
+  lookupKey    String
+  awayTeam     String
+  homeTeam     String
+  awayScore    Int?
+  homeScore    Int?
+  payload      Json?
+  createdAt    DateTime @default(now())
+
+  @@unique([businessDate, lookupKey])
+  @@map("NbaGameResult")
 }
 
 model MlbPrediction {
