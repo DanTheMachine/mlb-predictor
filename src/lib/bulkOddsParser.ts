@@ -6,6 +6,7 @@ export type ParsedBulkGame = {
   odds: OddsInput
   awayStarter?: string
   homeStarter?: string
+  gameTime?: string
 }
 
 const BULK_NAME_MAP: Record<string, TeamAbbr> = {
@@ -95,6 +96,10 @@ const BLOCK_TOKEN_REGEX = /(?:[OoUu]\s*\d+(?:\s*\.\d+)?|[+-]\s*\d+(?:\s*\.\d+)?|
 // Mixed-case names distinguish pitcher headers from all-caps channel codes.
 const STARTER_HEADER_REGEX =
   /^([A-Z][A-Za-z.']+(?:\s+[A-Z][A-Za-z.']+)*)\s*\/\s*([A-Z][A-Za-z.']+(?:\s+[A-Z][A-Za-z.']+)*)\s*:/
+
+// Matches a 12-hour game time (1–12) at any position in a header line.
+// Works even when channel codes run into the time (e.g. "RSN14:40 PM" → "4:40 PM").
+const GAME_TIME_REGEX = /([1-9]|1[0-2]):\d{2}\s*(?:AM|PM)/i
 
 const normalizeFractionGlyphs = (value: string): string =>
   value
@@ -227,18 +232,20 @@ function parseLineBlocks(lines: string[], teamIndices: number[]) {
 
     const headerLine = awayIndex > 0 ? (lines[awayIndex - 1] ?? '') : ''
     const starterMatch = STARTER_HEADER_REGEX.exec(headerLine)
+    const timeMatch = GAME_TIME_REGEX.exec(headerLine)
+    const gameTime = timeMatch ? timeMatch[0].replace(/\s+/, ' ').trim() : undefined
 
     const awayBlock = sliceBlock(lines, awayIndex + 1, homeIndex)
     const nextBoundary = teamIndices[i + 2] ?? lines.length
     const homeBlock = sliceBlock(lines, homeIndex + 1, nextBoundary)
 
-    games.push(buildParsedGame(awayAbbr, homeAbbr, awayBlock, homeBlock, starterMatch?.[1]?.trim(), starterMatch?.[2]?.trim()))
+    games.push(buildParsedGame(awayAbbr, homeAbbr, awayBlock, homeBlock, starterMatch?.[1]?.trim(), starterMatch?.[2]?.trim(), gameTime))
   }
 
   return games
 }
 
-function buildParsedGame(awayAbbr: TeamAbbr, homeAbbr: TeamAbbr, awayBlock: string[], homeBlock: string[], awayStarter?: string, homeStarter?: string): ParsedBulkGame {
+function buildParsedGame(awayAbbr: TeamAbbr, homeAbbr: TeamAbbr, awayBlock: string[], homeBlock: string[], awayStarter?: string, homeStarter?: string, gameTime?: string): ParsedBulkGame {
   const [awayRunLineRaw, awayRunLineOddsRaw, awayTotalRaw, awayOverOddsRaw, awayMoneylineRaw] = awayBlock
   const [homeRunLineRaw, homeRunLineOddsRaw, homeTotalRaw, homeUnderOddsRaw, homeMoneylineRaw] = homeBlock
 
@@ -262,6 +269,7 @@ function buildParsedGame(awayAbbr: TeamAbbr, homeAbbr: TeamAbbr, awayBlock: stri
     },
     ...(awayStarter ? { awayStarter } : {}),
     ...(homeStarter ? { homeStarter } : {}),
+    ...(gameTime ? { gameTime } : {}),
   }
 }
 

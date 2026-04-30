@@ -99,6 +99,19 @@ Three states, applied in priority order:
 
 `sharpProvider.ts` controls which source is used per `SHARP_PROVIDER` env var. Sharp signal tracking uses `MlbSharpSignal*` tables.
 
+### Doubleheader Handling
+
+Doubleheaders produce two rows for the same home/away team pair on the same date. The pipeline handles them throughout via a `_2` suffix on the lookup key (e.g., `20260430BALHOU` and `20260430BALHOU_2`).
+
+Key behaviors:
+- **MLB Stats API**: `gameNumber` field (1 or 2) is used to distinguish games. `LiveGame.gameNumber` is typed and available in `buildLiveScheduleRow`.
+- **ESPN odds/sharp maps**: `fetchEspnOddsMap` and `fetchEspnSharpSignalsMap` track `seenCounts` per matchup and store game 2 under `HOME-AWAY_2`. `buildLiveScheduleRow` uses `game.gameNumber` to look up the correct key.
+- **Odds paste overrides**: `parseBulkOdds` extracts `gameTime` from the header line (e.g., `Lance McCullers Jr./Brandon Young: MASN | SCHN1:05 PM` → `1:05 PM`). Stored in override `metadata.gameTime`.
+- **Override matching** (`applyOddsOverrides`): Uses time-proximity matching (within 90 min) when `gameTime` is stored. Falls back to **align-from-right** — when the paste has fewer games than the slate for a matchup (e.g., game 1 started and left the sportsbook), the override is assigned to the later game(s).
+- **Starter overrides**: Odds-paste starters are only applied when the MLB API returns TBD. Known starters from the API are never overridden by the paste.
+- **MLB Stats API game 2 times**: The API returns a placeholder time for doubleheader game 2 (close to game 1's time) until game 1 ends. The actual start time is only known after game 1 finishes. This is a data limitation of the API, not a bug in this codebase.
+- **`savePredictions`**: Dedup guard logs and skips any rows with duplicate `lookupKey` before upserting, preventing silent overwrites.
+
 ### Export/Import
 
 - Predictions CSV and Results CSV export to `EXPORT_DIR` (default `./generated/`)

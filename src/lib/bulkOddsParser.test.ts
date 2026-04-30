@@ -131,6 +131,7 @@ U 8 ½
         homeAbbr: 'WSH',
         awayStarter: 'Michael McGreevy',
         homeStarter: 'Miles Mikolas',
+        gameTime: '1:05 PM',
         odds: {
           source: 'manual',
           awayMoneyline: -115,
@@ -317,5 +318,139 @@ WASHINGTON NATIONALS rotation 956 run line + 1 1/2 price - 150 total U 8 1/2 und
         },
       },
     ])
+  })
+
+  it('extracts game time from the header line', () => {
+    const raw = `
+Noah Cameron/Jeffrey Springs: RYTV | NSCA12:05 PM
+KANSAS CITY ROYALS
+963
++ 1 ½
+- 185
+O 9 ½
++ 105
+Even
+OAKLAND ATHLETICS
+964
+- 1 ½
++ 165
+U 9 ½
+- 115
+- 110
+`
+    const [game] = parseBulkOdds(raw)
+    expect(game?.gameTime).toBe('12:05 PM')
+    expect(game?.awayStarter).toBe('Noah Cameron')
+    expect(game?.homeStarter).toBe('Jeffrey Springs')
+  })
+
+  it('extracts game time when channel code runs into the digits (e.g. RSN14:40 PM → 4:40 PM)', () => {
+    const raw = `
+Kevin Gausman/Bailey Ober: TWTV | RSN14:40 PM
+TORONTO BLUE JAYS
+965
+- 1 ½
++ 135
+O 8
+Even
+- 120
+MINNESOTA TWINS
+966
++ 1 ½
+- 145
+U 8
+- 110
++ 110
+`
+    const [game] = parseBulkOdds(raw)
+    expect(game?.gameTime).toBe('4:40 PM')
+  })
+
+  it('extracts game time from channel-only header (no starters)', () => {
+    const raw = `
+MLBN | NSBA | NSPA2:35 PM
+SAN FRANCISCO GIANTS
+955
++ 1 ½
+- 165
+O 8
+Even
++ 125
+PHILADELPHIA PHILLIES
+956
+- 1 ½
++ 155
+U 8
+- 110
+- 135
+`
+    const [game] = parseBulkOdds(raw)
+    expect(game?.gameTime).toBe('2:35 PM')
+    expect(game?.awayStarter).toBeUndefined()
+    expect(game?.homeStarter).toBeUndefined()
+  })
+
+  it('returns gameTime undefined when no time appears in the header', () => {
+    const raw = `
+ATLANTA BRAVES
+901
++ 1.5
+- 170
+O 8.5
+- 108
+- 135
+LOS ANGELES DODGERS
+902
+- 1.5
++ 145
+U 8.5
+- 112
++ 122
+`
+    const [game] = parseBulkOdds(raw)
+    expect(game?.gameTime).toBeUndefined()
+  })
+
+  it('parses both games of a doubleheader and assigns sequential game times', () => {
+    const raw = `
+Lance McCullers Jr./Brandon Young: MASN | SCHN1:05 PM
+HOUSTON ASTROS
+969
++ 1 ½
+- 175
+O 9 ½
+Even
++ 110
+BALTIMORE ORIOLES
+970
+- 1 ½
++ 155
+U 9 ½
+- 110
+- 120
+TBD/TBD: MASN | SCHN4:35 PM
+HOUSTON ASTROS
+971
++ 1 ½
+- 160
+O 9
+- 105
++ 115
+BALTIMORE ORIOLES
+972
+- 1 ½
++ 145
+U 9
+- 110
+- 130
+`
+    const games = parseBulkOdds(raw)
+    expect(games).toHaveLength(2)
+    expect(games[0]?.awayAbbr).toBe('HOU')
+    expect(games[0]?.homeAbbr).toBe('BAL')
+    expect(games[0]?.gameTime).toBe('1:05 PM')
+    expect(games[1]?.awayAbbr).toBe('HOU')
+    expect(games[1]?.homeAbbr).toBe('BAL')
+    expect(games[1]?.gameTime).toBe('4:35 PM')
   })
 })

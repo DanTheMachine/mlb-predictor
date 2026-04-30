@@ -157,6 +157,19 @@ Important behavior:
 - the Airflow DAG is now platform-neutral and chooses `npm` vs `npm.cmd` automatically
 - if Airflow is launched outside the repo root, use `MLB_PREDICTOR_DIR` to point it to the project directory
 
+## Doubleheader Support
+
+Doubleheaders are fully supported across the automation pipeline. Two games on the same date with the same home/away pair get lookup keys `YYYYMMDDHOAWAY` (game 1) and `YYYYMMDDHOAWAY_2` (game 2).
+
+Key behaviors to know when working on this codebase:
+
+- **`gameNumber`** from the MLB Stats API is available on `LiveGame` and used in `buildLiveScheduleRow` to look up the correct ESPN odds/sharp key (`HOME-AWAY_2` for game 2).
+- **ESPN odds and sharp maps** now deduplicate by matchup count so game 2 gets its own key instead of overwriting game 1.
+- **Odds paste** (`parseBulkOdds`) extracts `gameTime` from the header line (e.g., `1:05 PM`). This is stored in `MlbOddsOverride.metadata.gameTime` and used for time-proximity matching.
+- **Override assignment** (`applyOddsOverrides`) uses align-from-right when a paste has fewer entries than slate rows for a matchup — the assumption is that missing entries are games that already started and left the sportsbook.
+- **Starter overrides from the paste are only applied when the MLB API returns TBD.** The API's known starters are never overridden by the paste.
+- The MLB Stats API returns a placeholder time for doubleheader game 2 (near game 1's time) until game 1 ends. Don't rely on game 2's `gameTime` from the slate for time-sensitive logic until after game 1 completes.
+
 ## Odds Sources
 
 The app now distinguishes three odds sources:

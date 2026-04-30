@@ -70,6 +70,8 @@ type LiveGame = {
   gamePk?: number
   gameDate?: string
   officialDate?: string
+  gameNumber?: number
+  doubleHeader?: string
   status?: {
     detailedState?: string
     abstractGameState?: string
@@ -486,11 +488,16 @@ async function fetchEspnOddsMap(date: string): Promise<Partial<Record<string, Od
 
   const payload = (await response.json()) as EspnScoreboardResponse
   const map: Partial<Record<string, OddsInput>> = {}
+  const seenCounts = new Map<string, number>()
 
   for (const event of payload.events ?? []) {
     const parsed = parseOddsFromEspnEvent(event)
     if (!parsed) continue
-    map[oddsLookupKey(parsed.homeTeam, parsed.awayTeam)] = parsed.odds
+    const base = oddsLookupKey(parsed.homeTeam, parsed.awayTeam)
+    const count = (seenCounts.get(base) ?? 0) + 1
+    seenCounts.set(base, count)
+    const key = count === 1 ? base : `${base}_${count}`
+    map[key] = parsed.odds
   }
 
   return map
@@ -505,11 +512,16 @@ async function fetchEspnSharpSignalsMap(date: string): Promise<Partial<Record<st
 
     const payload = (await response.json()) as EspnScoreboardResponse
     const map: Partial<Record<string, SharpSignalInput>> = {}
+    const seenCounts = new Map<string, number>()
 
     for (const event of payload.events ?? []) {
       const parsed = parseSharpSignalsFromEspnEvent(event)
       if (!parsed) continue
-      map[oddsLookupKey(parsed.homeTeam, parsed.awayTeam)] = parsed.sharpInput
+      const base = oddsLookupKey(parsed.homeTeam, parsed.awayTeam)
+      const count = (seenCounts.get(base) ?? 0) + 1
+      seenCounts.set(base, count)
+      const key = count === 1 ? base : `${base}_${count}`
+      map[key] = parsed.sharpInput
     }
 
     return map
@@ -547,13 +559,19 @@ export async function fetchLiveScheduleRows(
   const liveTeams = options.liveTeams
   const starterOverrideMap = options.starterOverrideMap
 
+  console.log(`[fetchLiveScheduleRows] schedule returned ${games.length} games for ${date}:`, games.map((g) => `${normalizeMlbTeam(g.teams?.away?.team) ?? '?'}@${normalizeMlbTeam(g.teams?.home?.team) ?? '?'}(pk=${g.gamePk ?? '?'})`))
+
   const rows = await Promise.all(
     games.map(async (game) =>
       buildLiveScheduleRow(game, weatherFetcher, lineupFetcher, oddsMap, sharpMap, starterStatsMap, liveTeams, starterOverrideMap),
     ),
   )
 
-  return rows.filter((row): row is ScheduleRow => row !== null)
+  const filtered = rows.filter((row): row is ScheduleRow => row !== null)
+  if (filtered.length !== games.length) {
+    console.warn(`[fetchLiveScheduleRows] ${games.length - filtered.length} game(s) returned null from buildLiveScheduleRow — dropped:`, rows.map((r, i) => r === null ? games[i] : null).filter(Boolean).map((g) => `${normalizeMlbTeam(g!.teams?.away?.team) ?? '?'}@${normalizeMlbTeam(g!.teams?.home?.team) ?? '?'}(gameDate=${g!.gameDate ?? '?'}, awayTeam=${JSON.stringify(g!.teams?.away?.team)}, homeTeam=${JSON.stringify(g!.teams?.home?.team)})`))
+  }
+  return filtered
 }
 
 export async function fetchMlbScheduleRows(date: string): Promise<ScheduleRow[]> {
@@ -727,12 +745,13 @@ async function buildLiveScheduleRow(
   const now = new Date().toISOString()
   const weather = await weatherFetcher(homeTeam, gameDate)
   const lineup = game.gamePk ? await lineupFetcher(game.gamePk) : null
-  const lookup = oddsLookupKey(homeTeam, awayTeam)
-  const starterOverride = starterOverrideMap?.[lookup]
+  const baseLookup = oddsLookupKey(homeTeam, awayTeam)
+  const lookup = game.gameNumber && game.gameNumber > 1 ? `${baseLookup}_${game.gameNumber}` : baseLookup
+  const starterOverride = starterOverrideMap?.[baseLookup]
   const awayStarter = resolveLiveStarter(awayTeam, game.teams?.away?.probablePitcher, starterStatsMap, starterOverride?.awayStarter ?? undefined)
   const homeStarter = resolveLiveStarter(homeTeam, game.teams?.home?.probablePitcher, starterStatsMap, starterOverride?.homeStarter ?? undefined)
-  const odds = oddsMap[lookup] ?? defaultOddsForGame(homeTeam, awayTeam)
-  const sharpInput = sharpMap[lookup] ?? null
+  const odds = oddsMap[lookup] ?? oddsMap[baseLookup] ?? defaultOddsForGame(homeTeam, awayTeam)
+  const sharpInput = sharpMap[lookup] ?? sharpMap[baseLookup] ?? null
 
   return {
     game: {
