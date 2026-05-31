@@ -435,6 +435,13 @@ Recommended coverage:
 - tune recommendation thresholds
 - evaluate performance by market and confidence tier
 
+### Phase 6: Residual Model (Planned)
+- export graded prediction residuals from Postgres
+- train gradient boosted tree on actual − projected gaps
+- integrate server-side correction into the automation pipeline
+- evaluate corrected vs analytical accuracy on rolling held-out window
+- see `MLB_RESIDUAL_MODEL_PLAN.md` for the full phased plan and testing requirements
+
 ## Recommended First Build Order
 If we want the safest path, we should build in this order:
 
@@ -457,6 +464,8 @@ These patterns are worth carrying over:
 - export-first evaluation loop
 - modular `lib`, `hooks`, and `components` split
 - schedule-level workflow plus single-game workflow
+- analytical engine remains the browser model; any learned corrections are server-side only, so
+  the full factor-by-factor run projection breakdown remains visible in the UI at all times
 
 ## MLB-Specific Risks
 The biggest implementation risks are:

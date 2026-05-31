@@ -17,6 +17,8 @@ import {
   rejectOddsOverrides,
 } from './server/services/oddsOverrides.js'
 import { captureOddsOverrides } from './server/services/oddsCapture.js'
+import { exportResiduals } from './server/services/residualExport.js'
+import { applyResidualCorrections, evaluateResidual } from './server/services/residualCorrection.js'
 
 // eslint-disable-next-line no-unused-vars
 type CommandHandler = (args: Record<string, string | boolean>) => Promise<unknown>
@@ -129,6 +131,23 @@ const commands: Record<string, CommandHandler> = {
       lookupKeys: toCsvArgs(args.lookupKeys),
     })
   },
+  async 'export-residuals'(args) {
+    const from = toStringArg(args.from)
+    const to = toStringArg(args.to)
+    const file = toStringArg(args.file)
+    if (!from || !file) {
+      throw new Error('export-residuals requires --from YYYY-MM-DD --file PATH [--to YYYY-MM-DD]')
+    }
+    return exportResiduals({ from, to: to ?? from, file })
+  },
+  async 'apply-residual-corrections'(args) {
+    return applyResidualCorrections(toStringArg(args.date))
+  },
+  async 'evaluate-residual'(args) {
+    const from = toStringArg(args.from) ?? new Date().toISOString().slice(0, 10)
+    const to = toStringArg(args.to) ?? from
+    return evaluateResidual({ from, to })
+  },
 }
 
 async function main() {
@@ -154,6 +173,9 @@ async function main() {
         '  list-odds-overrides --date YYYY-MM-DD',
         '  approve-odds-overrides --date YYYY-MM-DD [--source LABEL] [--lookupKeys KEY1,KEY2]',
         '  reject-odds-overrides --date YYYY-MM-DD [--source LABEL] [--lookupKeys KEY1,KEY2]',
+        '  export-residuals --from YYYY-MM-DD --file PATH [--to YYYY-MM-DD]',
+        '  apply-residual-corrections --date YYYY-MM-DD',
+        '  evaluate-residual --from YYYY-MM-DD --to YYYY-MM-DD',
       ].join('\n'),
     )
     process.exitCode = command === 'help' ? 0 : 1

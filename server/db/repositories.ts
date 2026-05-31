@@ -39,6 +39,27 @@ export async function saveTeamStatSnapshot(date: string, snapshot: TeamRatingsSn
   })
 }
 
+export async function getTeamStatSnapshotsByDateRange(from: string, to: string) {
+  const prisma = getPrismaClient()
+  if (!prisma) return []
+
+  const records = await prisma.mlbTeamStatSnapshot.findMany({
+    where: {
+      businessDate: {
+        gte: toBusinessDate(from),
+        lte: toBusinessDate(to),
+      },
+    },
+    orderBy: { businessDate: 'asc' },
+  })
+
+  // Return as a map of dateStr → team stats payload
+  return records.map((r) => ({
+    date: r.businessDate.toISOString().slice(0, 10),
+    teams: r.payload as Record<string, { parkFactor: number }>,
+  }))
+}
+
 export async function saveSlateRows(date: string, rows: ScheduleRow[]) {
   const prisma = getPrismaClient()
   if (!prisma) return 0
@@ -516,6 +537,84 @@ export async function getResultsByDateRange(fromDate: string, toDate: string) {
   if (!prisma) return []
 
   return prisma.mlbGameResult.findMany({
+    where: {
+      businessDate: {
+        gte: toBusinessDate(fromDate),
+        lte: toBusinessDate(toDate),
+      },
+    },
+    orderBy: [{ businessDate: 'desc' }, { lookupKey: 'asc' }],
+  })
+}
+
+export async function getSlateGamesByDateRange(fromDate: string, toDate: string) {
+  const prisma = getPrismaClient()
+  if (!prisma) return []
+
+  return prisma.mlbSlateGame.findMany({
+    where: {
+      businessDate: {
+        gte: toBusinessDate(fromDate),
+        lte: toBusinessDate(toDate),
+      },
+    },
+    orderBy: [{ businessDate: 'desc' }, { lookupKey: 'asc' }],
+  })
+}
+
+export type ResidualCorrectionRow = {
+  lookupKey: string
+  predictionRunId?: string | null
+  deltaHome: number
+  deltaAway: number
+  correctedHome: number
+  correctedAway: number
+  modelVersion: string
+}
+
+export async function saveResidualCorrections(date: string, rows: ResidualCorrectionRow[]) {
+  const prisma = getPrismaClient()
+  if (!prisma || rows.length === 0) return 0
+
+  const results = await Promise.allSettled(
+    rows.map((row) =>
+      prisma.mlbResidualCorrection.upsert({
+        where: {
+          businessDate_lookupKey: {
+            businessDate: toBusinessDate(date),
+            lookupKey: row.lookupKey,
+          },
+        },
+        update: {
+          deltaHome: row.deltaHome,
+          deltaAway: row.deltaAway,
+          correctedHome: row.correctedHome,
+          correctedAway: row.correctedAway,
+          modelVersion: row.modelVersion,
+          predictionRunId: row.predictionRunId ?? null,
+        },
+        create: {
+          businessDate: toBusinessDate(date),
+          lookupKey: row.lookupKey,
+          deltaHome: row.deltaHome,
+          deltaAway: row.deltaAway,
+          correctedHome: row.correctedHome,
+          correctedAway: row.correctedAway,
+          modelVersion: row.modelVersion,
+          predictionRunId: row.predictionRunId ?? null,
+        },
+      }),
+    ),
+  )
+
+  return results.filter((r) => r.status === 'fulfilled').length
+}
+
+export async function getResidualCorrectionsByDateRange(fromDate: string, toDate: string) {
+  const prisma = getPrismaClient()
+  if (!prisma) return []
+
+  return prisma.mlbResidualCorrection.findMany({
     where: {
       businessDate: {
         gte: toBusinessDate(fromDate),

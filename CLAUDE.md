@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What This Project Is
 
 An MLB game prediction and wagering analysis system. Core capabilities:
-- Single-game simulator (React UI) with run projections, ML/RL/OU probabilities
+- Single-game analysis (React UI) with run projections, ML/RL/OU probabilities
 - Daily schedule intelligence with live odds, lineups, weather
 - Automated prediction pipeline (CLI/API) with DB persistence, scheduled via macOS launchd
 - Results tracking, grading, and model evaluation
@@ -52,6 +52,11 @@ npm run cli -- import-season-sheet --file "path.csv"
 npm run cli -- import-odds-overrides --file "path.txt"
 npm run cli -- list-odds-overrides --date 2026-03-31
 npm run cli -- approve-odds-overrides --date 2026-03-31 --source "manual-site-copy"
+
+# Residual model (Phase 1–5 of MLB_RESIDUAL_MODEL_PLAN.md — not yet implemented)
+npm run cli -- export-residuals --from 2026-04-01 --to 2026-04-30 --file path.csv
+npm run cli -- apply-residual-corrections --date 2026-03-31
+npm run cli -- evaluate-residual --from 2026-04-01 --to 2026-04-30
 ```
 
 ## Architecture
@@ -68,7 +73,7 @@ npm run cli -- approve-odds-overrides --date 2026-03-31 --source "manual-site-co
 - `proxy.ts` — CORS proxy for MLB Stats API, ESPN odds, weather APIs
 - `api.ts` — Express REST API consumed by AutomationDashboard tab
 - `cli.ts` — CLI wrapping the same service layer as the API
-- `server/services/` — mlbAutomation, oddsCapture, oddsOverrides, historicalImport, sharpProvider
+- `server/services/` — mlbAutomation, oddsCapture, oddsOverrides, historicalImport, sharpProvider, residualCorrection (planned)
 - `server/config.ts` — typed env config with defaults
 - `server/db/` — Prisma client singleton + repository layer
 
@@ -77,6 +82,7 @@ npm run cli -- approve-odds-overrides --date 2026-03-31 --source "manual-site-co
 - `PredictionRun` is sport-aware root; all MLB detail tables FK into it
 - Key tables: MlbTeamStatSnapshot, MlbSlateGame, MlbMarketOddsSnapshot, MlbOddsOverride, MlbPrediction, MlbGameResult
 - Analytics: EvaluationSummary, ModelVersion, CalibrationRun
+- Residual model (planned): MlbResidualCorrection — per-game Δ_home / Δ_away stored alongside MlbPrediction rows
 - DB persistence is optional — `ENABLE_DB_PERSISTENCE=false` runs without Postgres
 
 ### Prediction Engine (`src/lib/mlbModel.ts`)
@@ -88,7 +94,13 @@ The core model blends:
 - Park factors + weather (wind direction relative to park orientation)
 - Bullpen context
 
-Outputs: projected runs for each team → ML/RL/OU probabilities.
+Outputs: projected runs for each team → ML/RL/OU probabilities. The result includes `homeCalc`
+and `awayCalc` (`RunCalcSteps`) — the full multiplicative factor chain shown in the UI under
+Model Drivers.
+
+**Planned residual layer** (`server/services/residualCorrection.ts` — not yet implemented):
+A gradient boosted tree trained on historical `actual − projected` residuals. Applied server-side
+only; the browser always uses the analytical result. See `MLB_RESIDUAL_MODEL_PLAN.md`.
 
 ### Odds Flow
 
@@ -129,6 +141,7 @@ VITE_AUTOMATION_API_BASE_URL=http://localhost:8788
 EXPORT_DIR=./generated
 SHARP_PROVIDER=espn-derived
 ENABLE_DB_PERSISTENCE=true
+ENABLE_RESIDUAL_CORRECTION=false   # set true once Phase 4 of residual model plan is complete
 ```
 
 Playwright-based odds capture requires additional `ODDS_CAPTURE_*` vars — see `.env.example`.
@@ -215,6 +228,7 @@ ODDS_CAPTURE_POST_LOGIN_SCRIPT=  # Leave blank — causes wrong-page scraping if
 - `RUNNING_THE_MLB_MODEL.md` — startup instructions, sandbox DB workflow, proxy/API/CLI usage, launchd automation
 - `MLB_PREDICTOR_BUILD_PLAN.md` — original design doc, modeling philosophy, product direction
 - `MLB_AUTOMATION_PLAN.md`, `MLB_GAME_INTELLIGENCE_PLAN.md`, `MLB_ODDS_OVERRIDE_PLAN.md` — feature roadmaps
+- `MLB_RESIDUAL_MODEL_PLAN.md` — phased plan for the residual correction layer (training data, model training, integration, testing, evaluation)
 
 ## CI
 

@@ -109,6 +109,88 @@ describe('predictGame', () => {
     expect(backEndResult.projectedAwayRuns).toBeGreaterThan(aceResult.projectedAwayRuns)
   })
 
+  it('returns homeCalc and awayCalc with all required RunCalcSteps fields', () => {
+    const result = predictGame({
+      homeTeam: TEAMS.NYY,
+      awayTeam: TEAMS.BOS,
+      homeStarter: getDefaultStarter('NYY'),
+      awayStarter: getDefaultStarter('BOS'),
+      gameType: 'Regular Season',
+      temperature: 72,
+      windMph: 5,
+      windDirection: 'Neutral',
+      homeBullpenFatigue: 'Fresh',
+      awayBullpenFatigue: 'Fresh',
+      homeBullpenWorkload: createDefaultBullpenWorkload('Fresh'),
+      awayBullpenWorkload: createDefaultBullpenWorkload('Fresh'),
+      homeLineupConfidence: 'Confirmed',
+      awayLineupConfidence: 'Confirmed',
+    })
+
+    const requiredKeys: Array<keyof typeof result.homeCalc> = [
+      'leagueAvg', 'splitIndex', 'styleAdj', 'starterFactor', 'starterShare',
+      'bullpenFactor', 'blendedPrevention', 'defenseAdj', 'parkFactor',
+      'weather', 'lineupAdj', 'playoffAdj', 'projected',
+    ]
+
+    for (const key of requiredKeys) {
+      expect(typeof result.homeCalc[key]).toBe('number')
+      expect(typeof result.awayCalc[key]).toBe('number')
+    }
+
+    // awayCalc.projected matches projectedAwayRuns (no post-processing on away runs)
+    expect(result.awayCalc.projected).toBeCloseTo(result.projectedAwayRuns, 1)
+    // homeCalc.projected is the pre-home-field-bonus value; projectedHomeRuns adds +0.18 afterward
+    expect(result.homeCalc.projected).toBeCloseTo(result.projectedHomeRuns - 0.18, 1)
+
+    // Regular season — playoff adj must be exactly 1
+    expect(result.homeCalc.playoffAdj).toBe(1)
+    expect(result.awayCalc.playoffAdj).toBe(1)
+
+    // starterShare must be between 0 and 1
+    expect(result.homeCalc.starterShare).toBeGreaterThan(0)
+    expect(result.homeCalc.starterShare).toBeLessThan(1)
+  })
+
+  it('sets playoffAdj below 1.0 in postseason games', () => {
+    const regular = predictGame({
+      homeTeam: TEAMS.LAD,
+      awayTeam: TEAMS.ATL,
+      homeStarter: getDefaultStarter('LAD'),
+      awayStarter: getDefaultStarter('ATL'),
+      gameType: 'Regular Season',
+      temperature: 72,
+      windMph: 5,
+      windDirection: 'Neutral',
+      homeBullpenFatigue: 'Fresh',
+      awayBullpenFatigue: 'Fresh',
+      homeBullpenWorkload: createDefaultBullpenWorkload('Fresh'),
+      awayBullpenWorkload: createDefaultBullpenWorkload('Fresh'),
+      homeLineupConfidence: 'Confirmed',
+      awayLineupConfidence: 'Confirmed',
+    })
+
+    const postseason = predictGame({
+      homeTeam: TEAMS.LAD,
+      awayTeam: TEAMS.ATL,
+      homeStarter: getDefaultStarter('LAD'),
+      awayStarter: getDefaultStarter('ATL'),
+      gameType: 'Postseason',
+      temperature: 72,
+      windMph: 5,
+      windDirection: 'Neutral',
+      homeBullpenFatigue: 'Fresh',
+      awayBullpenFatigue: 'Fresh',
+      homeBullpenWorkload: createDefaultBullpenWorkload('Fresh'),
+      awayBullpenWorkload: createDefaultBullpenWorkload('Fresh'),
+      homeLineupConfidence: 'Confirmed',
+      awayLineupConfidence: 'Confirmed',
+    })
+
+    expect(postseason.homeCalc.playoffAdj).toBeLessThan(1)
+    expect(postseason.projectedTotal).toBeLessThan(regular.projectedTotal)
+  })
+
   it('penalizes heavily worked bullpens', () => {
     const freshBullpen = predictGame({
       homeTeam: TEAMS.SEA,

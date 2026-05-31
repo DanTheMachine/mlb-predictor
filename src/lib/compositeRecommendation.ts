@@ -24,7 +24,7 @@ export function buildCompositeRecommendation(row: ScheduleRow, analysis: Betting
 
   if (bestActive) return bestActive
 
-  return recommendations.sort((a, b) => b.score - a.score)[0] ?? passRecommendation(['Awaiting simulation'])
+  return recommendations.sort((a, b) => b.score - a.score)[0] ?? passRecommendation(['Awaiting analysis'])
 }
 
 function buildMarketCompositeRecommendation(
@@ -33,7 +33,7 @@ function buildMarketCompositeRecommendation(
   analysis: BettingAnalysis | null,
 ): CompositeRecommendation {
   if (!analysis || !row.result) {
-    return passRecommendation(['Awaiting simulation'], market)
+    return passRecommendation(['Awaiting analysis'], market)
   }
 
   const marketCandidate = marketCandidateFor(market, analysis)

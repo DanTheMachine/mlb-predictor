@@ -20,6 +20,9 @@ The predictor remains usable as a standalone UI, but now has an operational foun
 5. storing runs in Postgres when configured
 6. exporting predictions/results CSV from the automation layer
 7. evaluating persisted runs
+8. exporting graded residuals for residual model training (planned — Phase 1 of `MLB_RESIDUAL_MODEL_PLAN.md`)
+9. applying trained residual corrections to stored predictions (planned — Phase 4)
+10. evaluating corrected vs analytical accuracy (planned — Phase 5)
 
 ## Target Automated Pipeline
 
@@ -49,7 +52,7 @@ Future automation candidate after the pipeline is stable:
 
 ## Phase Breakdown
 
-### Phase 1
+### Phase 1 (Complete)
 
 - backend automation pipeline for predictions and results
 - Postgres persistence
@@ -67,6 +70,15 @@ Future automation candidate after the pipeline is stable:
 
 - manual bet tracking stored in Postgres
 - optional future automation for bet-result capture after the model pipeline is stable
+
+### Phase 4 (Planned — Residual Model)
+
+- `export-residuals` CLI command: joins `MlbPrediction` to `MlbGameResult` and exports a training CSV
+- Python training scripts in `scripts/` using XGBoost / LightGBM
+- `apply-residual-corrections` CLI command: applies trained model to stored predictions and writes `MlbResidualCorrection` rows
+- `evaluate-residual` CLI command: side-by-side analytical vs corrected MAE and Brier score
+- `ENABLE_RESIDUAL_CORRECTION` env var gates the correction step
+- See `MLB_RESIDUAL_MODEL_PLAN.md` for full phase breakdown, test plan, and documentation targets
 
 ## Notes
 
