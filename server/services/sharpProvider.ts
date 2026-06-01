@@ -8,7 +8,7 @@ export type SharpProviderResult = {
 
 export type SharpProvider = {
   name: string
-  // eslint-disable-next-line no-unused-vars
+   
   load(date: string, rows: ScheduleRow[]): Promise<SharpProviderResult[]>
 }
 

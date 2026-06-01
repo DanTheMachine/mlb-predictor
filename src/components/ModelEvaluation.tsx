@@ -60,12 +60,11 @@ function BucketCard({ label, bucket }: { label: string; bucket: EdgeBucketSummar
 
 type CsvFileInputProps = {
   label: string
-  value: string
   placeholder: string
   onChange: (value: string) => void
 }
 
-function CsvFileInput({ label, value, placeholder, onChange }: CsvFileInputProps) {
+function CsvFileInput({ label, placeholder, onChange }: CsvFileInputProps) {
   const [dragging, setDragging] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -389,7 +388,6 @@ export function ModelEvaluation() {
       {mode === 'master' ? (
         <CsvFileInput
           label="Master Sheet (predictions + results combined)"
-          value={masterSheet}
           placeholder="Paste or drop the combined predictions/results CSV here..."
           onChange={setMasterSheet}
         />
@@ -397,13 +395,11 @@ export function ModelEvaluation() {
         <div className="controls-grid two-textareas">
           <CsvFileInput
             label="Predictions CSV"
-            value={predictionsPaste}
             placeholder="Paste exported MLB predictions CSV here..."
             onChange={setPredictionsPaste}
           />
           <CsvFileInput
             label="Results CSV"
-            value={resultsPaste}
             placeholder="Paste results CSV with Date,Away,Home,AwayScore,HomeScore,LookupKey..."
             onChange={setResultsPaste}
           />

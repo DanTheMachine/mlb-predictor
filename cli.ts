@@ -20,7 +20,7 @@ import { captureOddsOverrides } from './server/services/oddsCapture.js'
 import { exportResiduals } from './server/services/residualExport.js'
 import { applyResidualCorrections, evaluateResidual } from './server/services/residualCorrection.js'
 
-// eslint-disable-next-line no-unused-vars
+ 
 type CommandHandler = (args: Record<string, string | boolean>) => Promise<unknown>
 
 function parseArgs(argv: string[]) {
