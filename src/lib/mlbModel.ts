@@ -6,6 +6,7 @@ import type {
   PredictGameInput,
   PredictionFeature,
   PredictionResult,
+  RunCalcSteps,
   StarterStats,
   TeamAbbr,
   TeamStats,
@@ -385,9 +386,26 @@ function projectTeamRuns({
 
   const runs = blendedBase * styleAdj * blendedPrevention * defenseAdj * parkFactor * weather * lineupAdj * playoffAdj
 
+  const calcSteps: RunCalcSteps = {
+    leagueAvg,
+    splitIndex,
+    styleAdj,
+    starterFactor,
+    starterShare,
+    bullpenFactor,
+    blendedPrevention,
+    defenseAdj,
+    parkFactor,
+    weather,
+    lineupAdj,
+    playoffAdj,
+    projected: clamp(runs, 2.3, 8.7),
+  }
+
   return {
     runs: clamp(runs, 2.3, 8.7),
     opposingStarterInnings: starterInnings,
+    calcSteps,
   }
 }
 
@@ -490,6 +508,8 @@ export function predictGame(input: PredictGameInput): PredictionResult {
     awayStarterInnings: Number(homeProjection.opposingStarterInnings.toFixed(1)),
     modelLean: leanFromMargin(projectedMargin),
     features,
+    homeCalc: homeProjection.calcSteps,
+    awayCalc: awayProjection.calcSteps,
   }
 }
 

@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest'
 
 import { americanToImplied, analyzeBetting } from './betting'
-import type { OddsInput, PredictionResult } from './mlbTypes'
+import type { OddsInput, PredictionResult, RunCalcSteps } from './mlbTypes'
+
+const stubCalc: RunCalcSteps = {
+  leagueAvg: 4.35,
+  splitIndex: 1.0,
+  styleAdj: 1.0,
+  starterFactor: 1.0,
+  starterShare: 0.6,
+  bullpenFactor: 1.0,
+  blendedPrevention: 1.0,
+  defenseAdj: 1.0,
+  parkFactor: 1.0,
+  weather: 1.0,
+  lineupAdj: 1.0,
+  playoffAdj: 1.0,
+  projected: 4.35,
+}
 
 describe('betting helpers', () => {
   it('converts american odds to implied probability', () => {
@@ -25,6 +41,8 @@ describe('betting helpers', () => {
       awayStarterInnings: 5.6,
       modelLean: 'Home side lean',
       features: [],
+      homeCalc: stubCalc,
+      awayCalc: stubCalc,
     }
 
     const odds: OddsInput = {
@@ -61,6 +79,8 @@ describe('betting helpers', () => {
       awayStarterInnings: 6.1,
       modelLean: 'Away side lean',
       features: [],
+      homeCalc: stubCalc,
+      awayCalc: stubCalc,
     }
 
     const odds: OddsInput = {

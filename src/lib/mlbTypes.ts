@@ -112,6 +112,22 @@ export type PredictionFeature = {
   detail: string
 }
 
+export type RunCalcSteps = {
+  leagueAvg: number
+  splitIndex: number
+  styleAdj: number
+  starterFactor: number
+  starterShare: number
+  bullpenFactor: number
+  blendedPrevention: number
+  defenseAdj: number
+  parkFactor: number
+  weather: number
+  lineupAdj: number
+  playoffAdj: number
+  projected: number
+}
+
 export type PredictionResult = {
   projectedHomeRuns: number
   projectedAwayRuns: number
@@ -127,6 +143,8 @@ export type PredictionResult = {
   awayStarterInnings: number
   modelLean: string
   features: PredictionFeature[]
+  homeCalc: RunCalcSteps
+  awayCalc: RunCalcSteps
 }
 
 export type BettingAnalysis = {

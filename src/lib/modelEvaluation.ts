@@ -70,6 +70,48 @@ export type EdgeBucketSummary = {
   winPct: string
 }
 
+export type ProjectionBias = {
+  games: number
+  avgProjectedTotal: number
+  avgActualTotal: number
+  totalDelta: number       // positive = model underestimates totals
+  avgProjectedHome: number
+  avgActualHome: number
+  homeDelta: number
+  avgProjectedAway: number
+  avgActualAway: number
+  awayDelta: number
+}
+
+export type TeamBiasRow = {
+  team: string             // home team name
+  games: number
+  avgProjectedHome: number
+  avgActualHome: number
+  delta: number            // positive = model underestimates home runs for this team/park
+}
+
+export type EdgeCalibrationBucket = {
+  label: string
+  minEdge: number
+  maxEdge: number
+  bets: number             // total bets (settled + pending)
+  settledBets: number
+  wins: number
+  losses: number
+  winRate: string          // wins / settled, formatted as "XX.X%"
+}
+
+export type CalibrationData = {
+  projectionBias: ProjectionBias | null   // null when no games have results
+  teamBias: TeamBiasRow[]
+  edgeCalibration: {
+    ML: EdgeCalibrationBucket[]
+    RL: EdgeCalibrationBucket[]
+    OU: EdgeCalibrationBucket[]
+  }
+}
+
 export type EvaluationReport = {
   thresholds: CalibrationThresholds
   moneyline: EvaluationSummary
@@ -80,6 +122,7 @@ export type EvaluationReport = {
     RL: EdgeBucketSummary[]
     OU: EdgeBucketSummary[]
   }
+  calibration: CalibrationData
   rows: EvaluatedBetRow[]
 }
 
@@ -168,6 +211,93 @@ function summarize(rows: EvaluatedBetRow[], betType: EvaluatedBetRow['betType'])
     roiUnits: filtered.reduce((sum, row) => sum + row.units, 0),
     winPct: settled > 0 ? ((wins / settled) * 100).toFixed(1) : '-',
   }
+}
+
+export function parseMasterSheetCsv(text: string): { predictions: ParsedPredictionRow[]; results: ParsedResultRow[] } {
+  const allRows = parseCsv(text.trim())
+
+  // The sheet has 2 leading summary rows before the real header — find the header by locating 'date' in col 0
+  const headerRowIndex = allRows.findIndex((row) => (row[0] ?? '').trim().toLowerCase() === 'date')
+  if (headerRowIndex < 0) {
+    throw new Error('Master sheet: could not find a header row with "Date" in the first column.')
+  }
+
+  const headers = (allRows[headerRowIndex] ?? []).map((value) => value.trim().toLowerCase())
+  const dataRows = allRows.slice(headerRowIndex + 1)
+
+  const idx = {
+    date: columnIndex(headers, 'Date'),
+    away: columnIndex(headers, 'Away'),
+    home: columnIndex(headers, 'Home'),
+    lookupKey: columnIndex(headers, 'LookupKey'),
+    awayRuns: columnIndex(headers, 'AwayRuns'),
+    homeRuns: columnIndex(headers, 'HomeRuns'),
+    projectedTotal: columnIndex(headers, 'Total'),
+    moneylineRec: columnIndex(headers, 'MoneylineRec'),
+    moneylineEdgePct: columnIndex(headers, 'MoneylineEdgePct'),
+    runLineRec: columnIndex(headers, 'RunLineRec'),
+    runLineEdgePct: columnIndex(headers, 'RunLineEdgePct'),
+    totalRec: columnIndex(headers, 'TotalRec'),
+    totalEdgePct: columnIndex(headers, 'TotalEdgePct'),
+    marketTotal: columnIndex(headers, 'MarketTotal'),
+    homeML: columnIndex(headers, 'HomeML'),
+    awayML: columnIndex(headers, 'AwayML'),
+    runLine: columnIndex(headers, 'RunLine'),
+    runLineHomeOdds: columnIndex(headers, 'RunLineHomeOdds'),
+    runLineAwayOdds: columnIndex(headers, 'RunLineAwayOdds'),
+    overOdds: columnIndex(headers, 'OverOdds'),
+    underOdds: columnIndex(headers, 'UnderOdds'),
+    actualHomeScore: columnIndexAny(headers, ['actual home score', 'actualhomescore']),
+    actualAwayScore: columnIndexAny(headers, ['actual away score', 'actualawayscore']),
+  }
+
+  if ([idx.date, idx.away, idx.home, idx.lookupKey].some((value) => value < 0)) {
+    throw new Error('Master sheet is missing required Date/Away/Home/LookupKey columns.')
+  }
+
+  const predictions: ParsedPredictionRow[] = []
+  const results: ParsedResultRow[] = []
+
+  for (const columns of dataRows) {
+    const get = (index: number) => (index >= 0 ? (columns[index] ?? '').trim() : '')
+    const date = get(idx.date)
+    const away = get(idx.away)
+    const home = get(idx.home)
+    const lookupKey = get(idx.lookupKey)
+    if (!date || !away || !home || !lookupKey) continue
+
+    predictions.push({
+      date,
+      away: away.toUpperCase(),
+      home: home.toUpperCase(),
+      lookupKey,
+      awayRuns: parseNumber(get(idx.awayRuns)),
+      homeRuns: parseNumber(get(idx.homeRuns)),
+      projectedTotal: parseNumber(get(idx.projectedTotal)),
+      moneylineRec: get(idx.moneylineRec),
+      moneylineEdgePct: parseNumber(get(idx.moneylineEdgePct)),
+      runLineRec: get(idx.runLineRec),
+      runLineEdgePct: parseNumber(get(idx.runLineEdgePct)),
+      totalRec: get(idx.totalRec),
+      totalEdgePct: parseNumber(get(idx.totalEdgePct)),
+      marketTotal: parseNumber(get(idx.marketTotal)),
+      homeML: parseNumber(get(idx.homeML)),
+      awayML: parseNumber(get(idx.awayML)),
+      runLine: parseNumber(get(idx.runLine)),
+      runLineHomeOdds: parseNumber(get(idx.runLineHomeOdds)),
+      runLineAwayOdds: parseNumber(get(idx.runLineAwayOdds)),
+      overOdds: parseNumber(get(idx.overOdds)),
+      underOdds: parseNumber(get(idx.underOdds)),
+    })
+
+    const homeScore = Number.parseInt(get(idx.actualHomeScore), 10)
+    const awayScore = Number.parseInt(get(idx.actualAwayScore), 10)
+    if (Number.isFinite(homeScore) && Number.isFinite(awayScore)) {
+      results.push({ date, away: away.toUpperCase(), home: home.toUpperCase(), homeScore, awayScore, lookupKey })
+    }
+  }
+
+  return { predictions, results }
 }
 
 export function parsePredictionsCsv(text: string): ParsedPredictionRow[] {
@@ -385,6 +515,7 @@ export function evaluatePredictions(
       RL: buildEdgeBuckets(evaluatedRows, 'RL'),
       OU: buildEdgeBuckets(evaluatedRows, 'OU'),
     },
+    calibration: buildCalibration(predictions, resultsByKey, evaluatedRows),
     rows: evaluatedRows.sort((a, b) => `${b.date}${b.lookupKey}`.localeCompare(`${a.date}${a.lookupKey}`)),
   }
 }
@@ -434,4 +565,105 @@ function buildEdgeBuckets(rows: EvaluatedBetRow[], betType: EvaluatedBetRow['bet
       winPct: settledBets > 0 ? ((wins / settledBets) * 100).toFixed(1) : '-',
     }
   })
+}
+
+function avg(values: number[]): number {
+  return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length
+}
+
+function buildCalibration(
+  predictions: ParsedPredictionRow[],
+  resultsByKey: Map<string, ParsedResultRow>,
+  evaluatedRows: EvaluatedBetRow[],
+): CalibrationData {
+  // --- Projection bias ---
+  type BiasEntry = { projHome: number; actualHome: number; projAway: number; actualAway: number; home: string }
+  const biasEntries: BiasEntry[] = []
+
+  for (const pred of predictions) {
+    const result = resultsByKey.get(pred.lookupKey)
+    if (!result || pred.homeRuns == null || pred.awayRuns == null) continue
+    biasEntries.push({
+      projHome: pred.homeRuns,
+      actualHome: result.homeScore,
+      projAway: pred.awayRuns,
+      actualAway: result.awayScore,
+      home: pred.home,
+    })
+  }
+
+  const projectionBias: ProjectionBias | null = biasEntries.length === 0 ? null : {
+    games: biasEntries.length,
+    avgProjectedHome: Number(avg(biasEntries.map((e) => e.projHome)).toFixed(2)),
+    avgActualHome: Number(avg(biasEntries.map((e) => e.actualHome)).toFixed(2)),
+    homeDelta: Number((avg(biasEntries.map((e) => e.actualHome)) - avg(biasEntries.map((e) => e.projHome))).toFixed(2)),
+    avgProjectedAway: Number(avg(biasEntries.map((e) => e.projAway)).toFixed(2)),
+    avgActualAway: Number(avg(biasEntries.map((e) => e.actualAway)).toFixed(2)),
+    awayDelta: Number((avg(biasEntries.map((e) => e.actualAway)) - avg(biasEntries.map((e) => e.projAway))).toFixed(2)),
+    avgProjectedTotal: Number(avg(biasEntries.map((e) => e.projHome + e.projAway)).toFixed(2)),
+    avgActualTotal: Number(avg(biasEntries.map((e) => e.actualHome + e.actualAway)).toFixed(2)),
+    totalDelta: Number((avg(biasEntries.map((e) => e.actualHome + e.actualAway)) - avg(biasEntries.map((e) => e.projHome + e.projAway))).toFixed(2)),
+  }
+
+  // --- Team bias (by home team) ---
+  const teamMap = new Map<string, BiasEntry[]>()
+  for (const entry of biasEntries) {
+    const list = teamMap.get(entry.home) ?? []
+    list.push(entry)
+    teamMap.set(entry.home, list)
+  }
+
+  const teamBias: TeamBiasRow[] = [...teamMap.entries()]
+    .filter(([, entries]) => entries.length >= 3)
+    .map(([team, entries]) => {
+      const projAvg = avg(entries.map((e) => e.projHome))
+      const actualAvg = avg(entries.map((e) => e.actualHome))
+      return {
+        team,
+        games: entries.length,
+        avgProjectedHome: Number(projAvg.toFixed(2)),
+        avgActualHome: Number(actualAvg.toFixed(2)),
+        delta: Number((actualAvg - projAvg).toFixed(2)),
+      }
+    })
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+
+  // --- Edge calibration (using evaluated bet rows, all settled bets) ---
+  const edgeBins = [
+    { label: '0–5%',  minEdge: 0,  maxEdge: 5 },
+    { label: '5–10%', minEdge: 5,  maxEdge: 10 },
+    { label: '10–15%',minEdge: 10, maxEdge: 15 },
+    { label: '15–20%',minEdge: 15, maxEdge: 20 },
+    { label: '20%+',  minEdge: 20, maxEdge: Number.POSITIVE_INFINITY },
+  ]
+
+  const buildEdgeCalibration = (betType: EvaluatedBetRow['betType']): EdgeCalibrationBucket[] =>
+    edgeBins.map(({ label, minEdge, maxEdge }) => {
+      const bucket = evaluatedRows.filter(
+        (r) => r.betType === betType && r.edgePct != null && r.edgePct >= minEdge && r.edgePct < maxEdge,
+      )
+      const settled = bucket.filter((r) => r.result === 'WIN' || r.result === 'LOSS' || r.result === 'PUSH')
+      const wins = settled.filter((r) => r.result === 'WIN').length
+      const losses = settled.filter((r) => r.result === 'LOSS').length
+      return {
+        label,
+        minEdge,
+        maxEdge,
+        bets: bucket.length,
+        settledBets: settled.length,
+        wins,
+        losses,
+        winRate: settled.length > 0 ? ((wins / settled.length) * 100).toFixed(1) : '-',
+      }
+    }).filter((b) => b.bets > 0)
+
+  return {
+    projectionBias,
+    teamBias,
+    edgeCalibration: {
+      ML: buildEdgeCalibration('ML'),
+      RL: buildEdgeCalibration('RL'),
+      OU: buildEdgeCalibration('OU'),
+    },
+  }
 }

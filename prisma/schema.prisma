@@ -239,6 +239,23 @@ model MlbGameResult {
   @@map("GameResult")
 }
 
+model MlbResidualCorrection {
+  id              String   @id @default(cuid())
+  businessDate    DateTime
+  lookupKey       String
+  predictionRunId String?
+  deltaHome       Float
+  deltaAway       Float
+  correctedHome   Float
+  correctedAway   Float
+  modelVersion    String
+  createdAt       DateTime @default(now())
+
+  @@unique([businessDate, lookupKey])
+  @@index([businessDate])
+  @@map("ResidualCorrection")
+}
+
 model EvaluationSummary {
   id           String   @id @default(cuid())
   sport        Sport    @default(MLB)

@@ -13,7 +13,7 @@ import {
   getStartersForTeam,
   predictGame,
 } from '../lib/mlbModel'
-import type { CompositeRecommendation, OddsInput, ScheduleRow, TeamAbbr, TeamStats, WindDirection } from '../lib/mlbTypes'
+import type { CompositeRecommendation, OddsInput, RunCalcSteps, ScheduleRow, TeamAbbr, TeamStats, WindDirection } from '../lib/mlbTypes'
 
 const SAMPLE_SLATE: Array<{ awayTeam: TeamAbbr; homeTeam: TeamAbbr; gameTime: string }> = [
   { awayTeam: 'ATL', homeTeam: 'LAD', gameTime: '7:10 PM' },
@@ -590,33 +590,6 @@ export function ScheduleAnalysis({
         </div>
       ) : null}
 
-      {hasRunAllSims && bestBets.length > 0 ? (
-        <div className="best-bets-panel">
-          <div className="best-bets-header">
-            <strong>Best Bets</strong>
-            <span className="subtle-copy">{bestBets.length} play{bestBets.length !== 1 ? 's' : ''} · sorted by score</span>
-          </div>
-          <div className="best-bets-list">
-            {bestBets.map(({ market, composite, row, edgePct }, idx) => (
-              <div key={idx} className="best-bet-row">
-                <span className={`best-bet-tier ${compositeTierClass(composite)}`}>{composite.tier}</span>
-                <span className="best-bet-market">{market}</span>
-                <span className="best-bet-game">
-                  <span className="best-bet-matchup">{row.game.awayTeam} @ {row.game.homeTeam} · {row.game.gameTime}</span>
-                  <span className="best-bet-pitching">{row.awayStarter.name} vs {row.homeStarter.name}</span>
-                  {composite.reasons[0] ? <span className="best-bet-reason">{composite.reasons[0]}</span> : null}
-                </span>
-                <span className="best-bet-pick">{formatCompositeCardPick(row, composite)}</span>
-                <span className="best-bet-meta">
-                  <span className={compositeTierClass(composite)}>{composite.score.toFixed(1)}/10</span>
-                  <span className="best-bet-edge">{edgePct.toFixed(1)}%</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
       {enrichedRows.length ? (
         <div className="schedule-list">
           {enrichedRows.map(({ row, analysis, composite, compositeSet }, idx) => {
@@ -790,6 +763,10 @@ export function ScheduleAnalysis({
                             </div>
                           ))}
                         </div>
+                        <div className="run-calc-grid">
+                          <RunCalcTable calc={row.result.awayCalc} teamAbbr={row.game.awayTeam} finalProjected={row.result.projectedAwayRuns} isHome={false} />
+                          <RunCalcTable calc={row.result.homeCalc} teamAbbr={row.game.homeTeam} finalProjected={row.result.projectedHomeRuns} isHome={true} />
+                        </div>
                       </div>
                     ) : (
                       <p className="subtle-copy">Run all projections to populate model outputs and composite recommendations for this card.</p>
@@ -799,6 +776,33 @@ export function ScheduleAnalysis({
               </article>
             )
           })}
+        </div>
+      ) : null}
+
+      {hasRunAllSims && bestBets.length > 0 ? (
+        <div className="best-bets-panel">
+          <div className="best-bets-header">
+            <strong>Best Bets</strong>
+            <span className="subtle-copy">{bestBets.length} play{bestBets.length !== 1 ? 's' : ''} · sorted by score</span>
+          </div>
+          <div className="best-bets-list">
+            {bestBets.map(({ market, composite, row, edgePct }, idx) => (
+              <div key={idx} className="best-bet-row">
+                <span className={`best-bet-tier ${compositeTierClass(composite)}`}>{composite.tier}</span>
+                <span className="best-bet-market">{market}</span>
+                <span className="best-bet-game">
+                  <span className="best-bet-matchup">{row.game.awayTeam} @ {row.game.homeTeam} · {row.game.gameTime}</span>
+                  <span className="best-bet-pitching">{row.awayStarter.name} vs {row.homeStarter.name}</span>
+                  {composite.reasons[0] ? <span className="best-bet-reason">{composite.reasons[0]}</span> : null}
+                </span>
+                <span className="best-bet-pick">{formatCompositeCardPick(row, composite)}</span>
+                <span className="best-bet-meta">
+                  <span className={compositeTierClass(composite)}>{composite.score.toFixed(1)}/10</span>
+                  <span className="best-bet-edge">{edgePct.toFixed(1)}%</span>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
       </section>
@@ -1118,6 +1122,52 @@ function ratingDetailLine(items: Array<[string, number, string]>) {
         </span>
       ))}
     </>
+  )
+}
+
+function fmt(value: number, decimals = 3) {
+  return value.toFixed(decimals)
+}
+
+function pctStr(value: number) {
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function RunCalcTable({ calc, teamAbbr, finalProjected, isHome }: { calc: RunCalcSteps; teamAbbr: string; finalProjected: number; isHome: boolean }) {
+  const homeFieldBonus = isHome ? finalProjected - calc.projected : 0
+
+  const rows: { label: string; value: string; note?: string }[] = [
+    { label: 'League avg', value: fmt(calc.leagueAvg, 2) },
+    { label: '× Split index', value: `×${fmt(calc.splitIndex)}`, note: 'offense vs pitcher hand' },
+    { label: '× Style adj', value: `×${fmt(calc.styleAdj)}`, note: 'power / discipline / contact' },
+    {
+      label: '× Prevention blend',
+      value: `×${fmt(calc.blendedPrevention)}`,
+      note: `starter ${pctStr(calc.starterShare)} · bullpen ${pctStr(1 - calc.starterShare)}`,
+    },
+    { label: '× Defense adj', value: `×${fmt(calc.defenseAdj)}` },
+    { label: '× Park factor', value: `×${fmt(calc.parkFactor)}` },
+    { label: '× Weather', value: `×${fmt(calc.weather)}` },
+    { label: '× Lineup adj', value: `×${fmt(calc.lineupAdj)}` },
+    ...(calc.playoffAdj !== 1 ? [{ label: '× Playoff adj', value: `×${fmt(calc.playoffAdj)}` }] : []),
+    ...(isHome ? [{ label: '+ Home field', value: `+${fmt(homeFieldBonus, 2)}` }] : []),
+  ]
+
+  return (
+    <div className="run-calc-table">
+      <div className="run-calc-header">{teamAbbr} Run Projection</div>
+      {rows.map((row) => (
+        <div key={row.label} className="run-calc-row">
+          <span className="run-calc-label">{row.label}</span>
+          <span className="run-calc-value">{row.value}</span>
+          {row.note && <span className="run-calc-note">{row.note}</span>}
+        </div>
+      ))}
+      <div className="run-calc-row run-calc-total">
+        <span className="run-calc-label">= Projected runs</span>
+        <span className="run-calc-value">{fmt(finalProjected, 2)}</span>
+      </div>
+    </div>
   )
 }
 

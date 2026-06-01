@@ -29,6 +29,8 @@ export type AppConfig = {
   oddsCaptureTimeoutMs: number
   enableDbPersistence: boolean
   enableFallbackMode: boolean
+  enableResidualCorrection: boolean
+  residualModelDir: string
 }
 
 function readInt(name: string, fallback: number) {
@@ -90,6 +92,8 @@ export const appConfig: AppConfig = {
   oddsCaptureTimeoutMs: readInt('ODDS_CAPTURE_TIMEOUT_MS', 45000),
   enableDbPersistence: readBool('ENABLE_DB_PERSISTENCE', true),
   enableFallbackMode: readBool('ENABLE_FALLBACK_MODE', true),
+  enableResidualCorrection: readBool('ENABLE_RESIDUAL_CORRECTION', false),
+  residualModelDir: readString('RESIDUAL_MODEL_DIR', './models'),
 }
 
 export function assertDateInput(date: string | undefined, fallback = new Date().toISOString().slice(0, 10)) {

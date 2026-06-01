@@ -563,6 +563,92 @@ body {
   resize: vertical;
 }
 
+.eval-mode-toggle {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.eval-mode-btn {
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.eval-mode-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.eval-mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.csv-drop-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 10px 14px;
+  border: 1.5px dashed var(--panel-border);
+  border-radius: 12px;
+  background: rgba(7, 14, 24, 0.6);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  min-height: 44px;
+}
+
+.csv-drop-zone:hover,
+.csv-drop-zone--over {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb, 59, 130, 246), 0.08);
+}
+
+.csv-drop-zone-input {
+  display: none;
+}
+
+.csv-drop-zone-prompt {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.csv-drop-zone-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+
+.csv-drop-zone-filename {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.csv-drop-zone-clear {
+  padding: 0 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.csv-drop-zone-clear:hover {
+  color: var(--danger-text);
+}
+
 .live-summary {
   margin-top: 18px;
   border: 1px solid var(--panel-border);
@@ -955,6 +1041,71 @@ body {
 
 .feature-bad {
   color: #ffb18a;
+}
+
+.run-calc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.run-calc-table {
+  background: rgba(8, 17, 28, 0.88);
+  border: 1px solid rgba(120, 146, 179, 0.12);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 0.8rem;
+}
+
+.run-calc-header {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.run-calc-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+
+.run-calc-row.run-calc-total {
+  border-top: 1px solid rgba(120, 146, 179, 0.18);
+  margin-top: 6px;
+  padding-top: 6px;
+  font-weight: 600;
+}
+
+.run-calc-label {
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+}
+
+.run-calc-value {
+  color: var(--text-primary, #e8edf4);
+  font-family: var(--font-mono, monospace);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.run-calc-note {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  grid-column: 1 / -1;
+  padding-left: 2px;
+  opacity: 0.75;
+}
+
+@media (max-width: 640px) {
+  .run-calc-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 860px) {

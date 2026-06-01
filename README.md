@@ -27,7 +27,7 @@ The MLB app is no longer a scaffold. It now includes:
 - live weather and ESPN odds integration
 - park-relative wind-direction interpretation for weather
 - bulk manual line editing
-- single-game simulator tools
+- single-game analysis tools
 - prediction export and results export for grading
 - automation foundation with CLI/API/Postgres support
 
@@ -37,7 +37,7 @@ The MLB app is no longer a scaffold. It now includes:
 2. Click `Fetch MLB Data`
 3. Click `Load Games`
 4. Optionally use `Bulk Edit Lines`
-5. Click `Run All Sims`
+5. Click `Run All Predictions`
 6. Export `Predictions CSV`
 7. Export `Results CSV`
 

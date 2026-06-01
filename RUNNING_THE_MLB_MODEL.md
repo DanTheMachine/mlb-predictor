@@ -305,6 +305,69 @@ bash start.sh
 - composite scores are displayed on a 10-point scale.
 - the game card header shows `Proj Score: AWAY x.xx - HOME y.yy` and the strongest `Comp Rec: ...`
 
+## Residual Model Training (Planned — Phase 1–5 of MLB_RESIDUAL_MODEL_PLAN.md)
+
+The residual model corrects systematic biases in the analytical engine. It is a server-side-only
+layer; the browser always uses the analytical projection.
+
+### Prerequisites
+
+- Python 3.11+
+- `pip install -r scripts/requirements.txt` (XGBoost / LightGBM, pandas, scikit-learn, SHAP)
+- At least 400 graded game rows in Postgres (`MlbPrediction` joined to `MlbGameResult`)
+
+### Step 1 — Export the training dataset
+
+```bash
+npm run cli -- export-residuals --from YYYY-MM-DD --to YYYY-MM-DD --file ./generated/residuals.csv
+```
+
+This joins predictions to graded results and writes one row per game with `residualHome` and
+`residualAway` columns. Fails with a clear error if fewer than 200 graded rows exist.
+
+### Step 2 — Train the model
+
+```bash
+python scripts/train_residual_model.py --input ./generated/residuals.csv
+```
+
+Serializes trained model artifacts to `models/residual_home.json` and `models/residual_away.json`.
+Also saves SHAP feature importances alongside the artifact for audit.
+The `models/` directory is gitignored — artifacts are generated, not source.
+
+### Step 3 — Evaluate before integrating
+
+```bash
+python scripts/evaluate_residual_model.py --held-out-from YYYY-MM-DD --held-out-to YYYY-MM-DD
+```
+
+Compare corrected vs analytical MAE and Brier score on the held-out window. Only integrate
+if the corrected model shows lower MAE and improved Brier score vs the baseline.
+
+### Step 4 — Apply corrections to stored predictions
+
+```bash
+npm run cli -- apply-residual-corrections --date YYYY-MM-DD
+```
+
+Reads stored `MlbPrediction` rows for the date, applies the trained correction, writes
+`MlbResidualCorrection` rows in Postgres. Requires `ENABLE_RESIDUAL_CORRECTION=true` in `.env`.
+
+### Step 5 — Evaluate the live pipeline
+
+```bash
+npm run cli -- evaluate-residual --from YYYY-MM-DD --to YYYY-MM-DD
+```
+
+Side-by-side comparison of analytical vs corrected accuracy. Exits non-zero with a warning if
+the corrected model is performing worse than the analytical baseline.
+
+### When to retrain
+
+- 200+ new graded games have accumulated since the last training run
+- MAE on the rolling 2-week window degrades more than 0.15 runs vs baseline
+- A significant rule change occurs mid-season
+
 ## Validation Commands
 
 ```bash

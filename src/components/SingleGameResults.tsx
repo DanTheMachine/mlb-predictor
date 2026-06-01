@@ -1,5 +1,5 @@
 import { analyzeBetting, mlAmerican } from '../lib/betting'
-import type { OddsInput, PredictionResult, TeamStats } from '../lib/mlbTypes'
+import type { OddsInput, PredictionResult, RunCalcSteps, TeamStats } from '../lib/mlbTypes'
 
 type SingleGameResultsProps = {
   result: PredictionResult
@@ -12,6 +12,48 @@ type SingleGameResultsProps = {
 
 function pct(value: number) {
   return `${(value * 100).toFixed(1)}%`
+}
+
+function fmt(value: number, decimals = 3) {
+  return value.toFixed(decimals)
+}
+
+function RunCalcTable({ calc, teamAbbr, finalProjected, isHome }: { calc: RunCalcSteps; teamAbbr: string; finalProjected: number; isHome: boolean }) {
+  const homeFieldBonus = isHome ? finalProjected - calc.projected : 0
+
+  const rows: { label: string; value: string; note?: string }[] = [
+    { label: 'League avg', value: fmt(calc.leagueAvg, 2) },
+    { label: '× Split index', value: `×${fmt(calc.splitIndex)}`, note: `offense vs pitcher hand` },
+    { label: '× Style adj', value: `×${fmt(calc.styleAdj)}`, note: 'power / discipline / contact' },
+    {
+      label: '× Prevention blend',
+      value: `×${fmt(calc.blendedPrevention)}`,
+      note: `starter ${pct(calc.starterShare)} · bullpen ${pct(1 - calc.starterShare)}`,
+    },
+    { label: '× Defense adj', value: `×${fmt(calc.defenseAdj)}` },
+    { label: '× Park factor', value: `×${fmt(calc.parkFactor)}` },
+    { label: '× Weather', value: `×${fmt(calc.weather)}` },
+    { label: '× Lineup adj', value: `×${fmt(calc.lineupAdj)}` },
+    ...(calc.playoffAdj !== 1 ? [{ label: '× Playoff adj', value: `×${fmt(calc.playoffAdj)}` }] : []),
+    ...(isHome ? [{ label: '+ Home field', value: `+${fmt(homeFieldBonus, 2)}` }] : []),
+  ]
+
+  return (
+    <div className="run-calc-table">
+      <div className="run-calc-header">{teamAbbr} Run Projection</div>
+      {rows.map((row) => (
+        <div key={row.label} className="run-calc-row">
+          <span className="run-calc-label">{row.label}</span>
+          <span className="run-calc-value">{row.value}</span>
+          {row.note && <span className="run-calc-note">{row.note}</span>}
+        </div>
+      ))}
+      <div className="run-calc-row run-calc-total">
+        <span className="run-calc-label">= Projected runs</span>
+        <span className="run-calc-value">{fmt(finalProjected, 2)}</span>
+      </div>
+    </div>
+  )
 }
 
 export function SingleGameResults({ result, odds, homeTeam, awayTeam, homeStarterName, awayStarterName }: SingleGameResultsProps) {
@@ -130,6 +172,10 @@ export function SingleGameResults({ result, odds, homeTeam, awayTeam, homeStarte
               <strong className={feature.good ? 'feature-good' : 'feature-bad'}>{feature.detail}</strong>
             </div>
           ))}
+        </div>
+        <div className="run-calc-grid">
+          <RunCalcTable calc={result.awayCalc} teamAbbr={awayTeam.abbr} finalProjected={result.projectedAwayRuns} isHome={false} />
+          <RunCalcTable calc={result.homeCalc} teamAbbr={homeTeam.abbr} finalProjected={result.projectedHomeRuns} isHome={true} />
         </div>
       </div>
     </section>

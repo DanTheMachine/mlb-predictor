@@ -28,6 +28,9 @@ playwright-report
 test-results
 .claude/
 
+# Residual model artifacts (generated — not source)
+models/
+
 # Airflow runtime files
 airflow/airflow.cfg
 airflow/airflow.db
