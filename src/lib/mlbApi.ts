@@ -170,15 +170,15 @@ type LineupSnapshot = {
   homeNote: string
 }
 
-// eslint-disable-next-line no-unused-vars
+ 
 type WeatherFetcher = (homeTeam: TeamAbbr, gameDate: string) => Promise<WeatherSnapshot | null>
-// eslint-disable-next-line no-unused-vars
+ 
 type ScheduleFetcher = (date: string) => Promise<LiveScheduleResponse>
-// eslint-disable-next-line no-unused-vars
+ 
 type LineupFetcher = (gamePk: number) => Promise<LineupSnapshot | null>
-// eslint-disable-next-line no-unused-vars
+ 
 type OddsFetcher = (date: string) => Promise<Partial<Record<string, OddsInput>>>
-// eslint-disable-next-line no-unused-vars
+ 
 type SharpFetcher = (date: string) => Promise<Partial<Record<string, SharpSignalInput>>>
 
 const TEAM_ID_MAP: Record<number, TeamAbbr> = {

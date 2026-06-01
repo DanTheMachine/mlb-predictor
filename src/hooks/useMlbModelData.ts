@@ -12,7 +12,7 @@ export type MlbModelDataState = {
   teamsUpdated: boolean
   teamsUpdatedAt: string | null
   loadedSeason: number | null
-  // eslint-disable-next-line no-unused-vars
+   
   fetchTeamData: (...args: [string]) => Promise<void>
 }
 
