@@ -296,8 +296,8 @@ describe('mlbApi', () => {
                 gameDate: '2026-04-30T13:35:00Z',
                 gameNumber: 1,
                 teams: {
-                  away: { team: { id: 117, abbreviation: 'HOU' }, probablePitcher: { fullName: 'Lance McCullers Jr.', pitchingHand: { code: 'R' } } },
-                  home: { team: { id: 110, abbreviation: 'BAL' }, probablePitcher: { fullName: 'Brandon Young', pitchingHand: { code: 'R' } } },
+                  away: { team: { id: 117, abbreviation: 'HOU' }, probablePitcher: { fullName: 'Spencer Arrighetti', pitchingHand: { code: 'R' } } },
+                  home: { team: { id: 110, abbreviation: 'BAL' }, probablePitcher: { fullName: 'Kyle Bradish', pitchingHand: { code: 'R' } } },
                 },
               },
               {
@@ -305,8 +305,8 @@ describe('mlbApi', () => {
                 gameDate: '2026-04-30T18:05:00Z',
                 gameNumber: 2,
                 teams: {
-                  away: { team: { id: 117, abbreviation: 'HOU' }, probablePitcher: { fullName: 'Framber Valdez', pitchingHand: { code: 'L' } } },
-                  home: { team: { id: 110, abbreviation: 'BAL' }, probablePitcher: { fullName: 'Corbin Burnes', pitchingHand: { code: 'R' } } },
+                  away: { team: { id: 117, abbreviation: 'HOU' }, probablePitcher: { fullName: 'Peter Lambert', pitchingHand: { code: 'R' } } },
+                  home: { team: { id: 110, abbreviation: 'BAL' }, probablePitcher: { fullName: 'Shane Baz', pitchingHand: { code: 'R' } } },
                 },
               },
             ],
@@ -325,9 +325,9 @@ describe('mlbApi', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]?.game.awayTeam).toBe('HOU')
     expect(rows[0]?.game.homeTeam).toBe('BAL')
-    expect(rows[0]?.awayStarter.name).toBe('Lance McCullers Jr.')
+    expect(rows[0]?.awayStarter.name).toBe('Spencer Arrighetti')
     expect(rows[0]?.odds.overUnder).toBe(9.5)
-    expect(rows[1]?.awayStarter.name).toBe('Framber Valdez')
+    expect(rows[1]?.awayStarter.name).toBe('Peter Lambert')
     expect(rows[1]?.odds.overUnder).toBe(8.5)
   })
 })

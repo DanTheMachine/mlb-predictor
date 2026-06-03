@@ -98,6 +98,16 @@ Outputs: projected runs for each team → ML/RL/OU probabilities. The result inc
 and `awayCalc` (`RunCalcSteps`) — the full multiplicative factor chain shown in the UI under
 Model Drivers.
 
+### Starter Resolution (`src/lib/mlbApi.ts`)
+
+Starters are resolved via `resolveLiveStarter` in priority order:
+1. Paste override (trusted name, no team validation)
+2. Live stats map (`fetchStarterStatsMap`) — 2026 season stats fetched from MLB API via proxy. Uses `split.team.id` mapped through `TEAM_ID_MAP`. Requires ≥2 GS.
+3. `STARTER_SEEDS` in `mlbModel.ts` — 5 pitchers per team, updated to 2026 actuals as of June 2026.
+4. TBD stub (rating 78) — pitcher named but no data available.
+
+**Stat blending:** When live stats are available, they are blended with seed stats weighted by games started: `liveWeight = min(1.0, GS / 15)`. At 15 GS the model uses 100% live stats; below that seeds contribute to dampen small-sample noise. The blend threshold (`BLEND_FULL_GS = 15`) corresponds roughly to the All-Star break for most rotation starters.
+
 **Planned residual layer** (`server/services/residualCorrection.ts` — not yet implemented):
 A gradient boosted tree trained on historical `actual − projected` residuals. Applied server-side
 only; the browser always uses the analytical result. See `MLB_RESIDUAL_MODEL_PLAN.md`.

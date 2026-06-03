@@ -92,10 +92,10 @@ const TEAM_NAME_PATTERNS = Object.keys(BULK_NAME_MAP)
 const TEAM_NAME_REGEX = new RegExp(`\\b(?:${TEAM_NAME_PATTERNS.join('|')})\\b`, 'gi')
 const BLOCK_TOKEN_REGEX = /(?:[OoUu]\s*\d+(?:\s*\.\d+)?|[+-]\s*\d+(?:\s*\.\d+)?|even|\d{3,4})/gi
 
-// Matches "FirstName LastName/FirstName LastName:" at the start of a header line.
+// Matches "FirstName LastName/FirstName LastName:" optionally preceded by © and whitespace.
 // Mixed-case names distinguish pitcher headers from all-caps channel codes.
 const STARTER_HEADER_REGEX =
-  /^([A-Z][A-Za-z.']+(?:\s+[A-Z][A-Za-z.']+)*)\s*\/\s*([A-Z][A-Za-z.']+(?:\s+[A-Z][A-Za-z.']+)*)\s*:/
+  /^(?:©\s*)?([A-Z][A-Za-z.'À-ɏ]+(?:\s+[A-Z][A-Za-z.'À-ɏ]+)*)\s*\/\s*([A-Z][A-Za-z.'À-ɏ]+(?:\s+[A-Z][A-Za-z.'À-ɏ]+)*)\s*:/
 
 // Matches a 12-hour game time (1–12) at any position in a header line.
 // Works even when channel codes run into the time (e.g. "RSN14:40 PM" → "4:40 PM").
@@ -220,6 +220,8 @@ export function parseBulkOdds(raw: string): ParsedBulkGame[] {
 
 function parseLineBlocks(lines: string[], teamIndices: number[]) {
   const games: ParsedBulkGame[] = []
+  // Track seen matchups to detect duplicates (e.g. sportsbook shows old line then updated line for same game)
+  const seenKeys = new Map<string, number>()
 
   for (let i = 0; i < teamIndices.length - 1; i += 2) {
     const awayIndex = teamIndices[i]
@@ -231,6 +233,7 @@ function parseLineBlocks(lines: string[], teamIndices: number[]) {
     if (!awayAbbr || !homeAbbr) continue
 
     const headerLine = awayIndex > 0 ? (lines[awayIndex - 1] ?? '') : ''
+    const isPitcherChange = /pitcher change/i.test(headerLine)
     const starterMatch = STARTER_HEADER_REGEX.exec(headerLine)
     const timeMatch = GAME_TIME_REGEX.exec(headerLine)
     const gameTime = timeMatch ? timeMatch[0].replace(/\s+/, ' ').trim() : undefined
@@ -239,7 +242,19 @@ function parseLineBlocks(lines: string[], teamIndices: number[]) {
     const nextBoundary = teamIndices[i + 2] ?? lines.length
     const homeBlock = sliceBlock(lines, homeIndex + 1, nextBoundary)
 
-    games.push(buildParsedGame(awayAbbr, homeAbbr, awayBlock, homeBlock, starterMatch?.[1]?.trim(), starterMatch?.[2]?.trim(), gameTime))
+    const game = buildParsedGame(awayAbbr, homeAbbr, awayBlock, homeBlock, starterMatch?.[1]?.trim(), starterMatch?.[2]?.trim(), gameTime)
+
+    // Deduplicate same-game duplicates (e.g. sportsbook shows stale "Pitcher Change" line then updated line).
+    // Genuine doubleheaders have different game times — treat those as separate entries.
+    const key = `${awayAbbr}-${homeAbbr}:${gameTime ?? ''}`
+    const existingIdx = seenKeys.get(key)
+    if (existingIdx !== undefined && !isPitcherChange) {
+      games[existingIdx] = game
+    } else if (existingIdx === undefined) {
+      seenKeys.set(key, games.length)
+      games.push(game)
+    }
+    // If duplicate with same time AND it's another pitcher-change line, skip it entirely
   }
 
   return games
