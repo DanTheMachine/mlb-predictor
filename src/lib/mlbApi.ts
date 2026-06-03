@@ -385,15 +385,18 @@ function makeTbdStarter(team: TeamAbbr): StarterStats {
   }
 }
 
+const normalizeAccents = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
 // Resolves a named pitcher (from paste overrides or any trusted source) to StarterStats.
 // Trusts the name fully — does not enforce team validation.
 export function resolveStarterByName(name: string, team: TeamAbbr, starterStatsMap?: StarterStatsMap): StarterStats {
   // Prefer seed hand since the stats map always defaults to 'R'
   const seeds = getStartersForTeam(team)
-  const exactSeed = seeds.find((s) => s.name.toLowerCase() === name.toLowerCase())
+  const normName = normalizeAccents(name)
+  const exactSeed = seeds.find((s) => normalizeAccents(s.name) === normName)
   const hand: 'L' | 'R' = exactSeed?.hand ?? 'R'
 
-  const liveStats = starterStatsMap?.get(name.toLowerCase())
+  const liveStats = starterStatsMap?.get(name.toLowerCase()) ?? starterStatsMap?.get(normName)
   if (liveStats) return { ...liveStats, hand }
 
   if (exactSeed) return exactSeed
