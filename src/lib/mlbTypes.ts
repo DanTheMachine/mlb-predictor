@@ -75,6 +75,7 @@ export type StarterStats = {
   role: 'Ace' | 'Mid-Rotation' | 'Back-End'
   recentPitchCount: number
   daysRest: number
+  gamesStarted?: number
 }
 
 export type BullpenWorkload = {

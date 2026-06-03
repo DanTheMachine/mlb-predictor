@@ -401,6 +401,31 @@ export function resolveStarterByName(name: string, team: TeamAbbr, starterStatsM
   return { ...makeTbdStarter(team), name, hand }
 }
 
+// Blend live 2026 stats with seed (prior) stats weighted by games started.
+// At 15 GS the blend is 100% live; below that seeds still contribute.
+const BLEND_FULL_GS = 15
+
+function blendWithSeed(live: StarterStats, seed: StarterStats | undefined): StarterStats {
+  const gs = live.gamesStarted ?? 0
+  const liveW = Math.min(1, gs / BLEND_FULL_GS)
+  if (liveW >= 1 || !seed) return live
+  const seedW = 1 - liveW
+  const blend = (l: number, s: number) => Number((l * liveW + s * seedW).toFixed(2))
+  const era = blend(live.era, seed.era)
+  const fip = blend(live.fip, seed.fip)
+  const whip = blend(live.whip, seed.whip)
+  const kRate = blend(live.kRate, seed.kRate)
+  const bbRate = blend(live.bbRate, seed.bbRate)
+  const hr9 = blend(live.hr9, seed.hr9)
+  const pitchingRating = computePitchingRating(era, kRate, bbRate)
+  return {
+    ...live,
+    era, fip, whip, kRate, bbRate, hr9,
+    pitchingRating,
+    role: pitcherRole(pitchingRating),
+  }
+}
+
 export function resolveLiveStarter(
   team: TeamAbbr,
   probablePitcher: LivePitcher | undefined,
@@ -419,7 +444,8 @@ export function resolveLiveStarter(
   if (liveStats) {
     // If season stats show this pitcher on a different team, the API has stale data — fall back to TBD
     if (liveStats.team !== team) return makeTbdStarter(team)
-    return { ...liveStats, hand }
+    const seed = getStartersForTeam(team).find((s) => s.name.toLowerCase() === liveName.toLowerCase())
+    return { ...blendWithSeed(liveStats, seed), hand }
   }
 
   const starters = getStartersForTeam(team)
@@ -694,8 +720,8 @@ export async function fetchStarterStatsMap(season: number): Promise<StarterStats
       const pitchingRating = computePitchingRating(era, kRate, bbRate)
       const role = pitcherRole(pitchingRating)
 
-      const teamCode = split.team?.abbreviation?.toUpperCase()
-      const teamAbbr = teamCode ? (TEAM_CODE_MAP[teamCode] ?? null) : null
+      const teamId = split.team?.id
+      const teamAbbr = teamId ? (TEAM_ID_MAP[teamId] ?? null) : null
       if (!teamAbbr) continue
 
       const normalizedName = name.toLowerCase()
@@ -715,6 +741,7 @@ export async function fetchStarterStatsMap(season: number): Promise<StarterStats
         role,
         recentPitchCount: 90,
         daysRest: 5,
+        gamesStarted: gs,
       })
     }
 
