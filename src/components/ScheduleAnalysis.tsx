@@ -643,18 +643,21 @@ export function ScheduleAnalysis({
                           <strong className={compositeTierClass(compositeSet.ML)}>{formatCompositeCardPick(row, compositeSet.ML)}</strong>
                           <small>{formatCompositeTierScore(compositeSet.ML)}</small>
                           <small>{compositeSet.ML.reasons.join(' · ')}</small>
+                          {analysis ? <small className="raw-pick-line"><span className={rawEdgeClass(analysis.mlValueSide === 'none', analysis.mlValuePct)}>Model edge: {analysis.mlValueSide === 'none' ? 'PASS' : `${analysis.mlValueSide.toUpperCase()} ML`} ({analysis.mlValuePct.toFixed(1)}%)</span></small> : null}
                         </article>
                         <article className="mini-card">
                           <span>Composite O/U Recommendation</span>
                           <strong className={compositeTierClass(compositeSet.OU)}>{formatCompositeCardPick(row, compositeSet.OU)}</strong>
                           <small>{formatCompositeTierScore(compositeSet.OU)}</small>
                           <small>{compositeSet.OU.reasons.join(' · ')}</small>
+                          {analysis ? <small className="raw-pick-line"><span className={rawEdgeClass(analysis.ouRec === 'pass', analysis.ouEdgePct)}>Model edge: {analysis.ouRec.toUpperCase()} ({analysis.ouEdgePct.toFixed(1)}%)</span></small> : null}
                         </article>
                         <article className="mini-card">
                           <span>Composite RL Recommendation</span>
                           <strong className={compositeTierClass(compositeSet.RL)}>{formatCompositeCardPick(row, compositeSet.RL)}</strong>
                           <small>{formatCompositeTierScore(compositeSet.RL)}</small>
                           <small>{compositeSet.RL.reasons.join(' · ')}</small>
+                          {analysis ? <small className="raw-pick-line"><span className={rawEdgeClass(analysis.runLineRec === 'pass', analysis.runLineEdge)}>Model edge: {analysis.runLineRec.toUpperCase()} ({analysis.runLineEdge.toFixed(1)}%)</span></small> : null}
                         </article>
                       </div>
                     ) : null}
@@ -1006,6 +1009,13 @@ function compositeTierClass(composite: CompositeRecommendation) {
   if (composite.tier === 'C') return 'market-edge-c'
   if (composite.tier === 'B') return 'market-edge-b'
   return 'market-edge-a'
+}
+
+function rawEdgeClass(isPass: boolean, edgePct: number) {
+  if (isPass) return 'market-edge-pass'
+  if (edgePct >= 8) return 'market-edge-a'
+  if (edgePct >= 4) return 'market-edge-b'
+  return 'market-edge-c'
 }
 
 function displayTeamName(team: TeamAbbr, teams: Record<TeamAbbr, TeamStats>) {
