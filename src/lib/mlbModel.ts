@@ -56,7 +56,16 @@ const TEAM_SEEDS: Array<
   ['MIN', 'Twins', '#002B5C', '#D31145', 'AL', 'AL Central', 96, 95, 96, 101, 96, 102, 92, 103, 98],
   ['NYM', 'Mets', '#002D72', '#FF5910', 'NL', 'NL East', 111, 112, 110, 111, 105, 108, 104, 97, 98],
   ['NYY', 'Yankees', '#0C2340', '#C4CED4', 'AL', 'AL East', 106, 105, 106, 101, 101, 104, 100, 110, 102],
-  ['OAK', 'Athletics', '#003831', '#EFB21E', 'AL', 'AL West', 93, 93, 95, 90, 91, 97, 103, 97, 100],
+  // parkFactor recalibrated from 100 (neutral) to 130 — OAK has played home games at Sutter
+  // Health Park (a converted minor-league facility) since 2025, and the neutral factor was
+  // stale from the old Oakland Coliseum. Two independent 2026 season-to-date checks agree
+  // OAK's true home run environment is dramatically inflated: (1) model residuals show
+  // actual total runs +2.70/game above projected in OAK home games (n=47), the largest such
+  // gap in the league by a wide margin; (2) live MLB Stats API box scores show OAK averaging
+  // 12.52 total runs/game at home vs 7.67 on the road (n=48/49), a raw home/road ratio of 163.
+  // 130 is a conservative shrinkage of that raw 163 toward the prior 100 given single-season,
+  // opponent-unadjusted noise in a home/road ratio calculation.
+  ['OAK', 'Athletics', '#003831', '#EFB21E', 'AL', 'AL West', 93, 93, 95, 90, 91, 97, 103, 97, 130],
   ['PHI', 'Phillies', '#E81828', '#002D72', 'NL', 'NL East', 106, 103, 108, 96, 102, 105, 95, 104, 101],
   ['PIT', 'Pirates', '#FDB827', '#27251F', 'NL', 'NL Central', 102, 102, 104, 90, 100, 100, 92, 90, 98],
   ['SD', 'Padres', '#2F241D', '#FFC425', 'NL', 'NL West', 98, 98, 97, 97, 99, 98, 101, 96, 96],
