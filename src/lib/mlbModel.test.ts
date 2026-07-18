@@ -22,7 +22,7 @@ describe('predictGame', () => {
     })
 
     expect(result.projectedHomeRuns).toBeGreaterThan(result.projectedAwayRuns)
-    expect(result.homeWinProb).toBeGreaterThan(0.6)
+    expect(result.homeWinProb).toBeGreaterThan(0.5)
     expect(result.projectedTotal).toBeGreaterThan(8)
   })
 

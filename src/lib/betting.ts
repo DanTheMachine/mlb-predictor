@@ -25,7 +25,11 @@ export function analyzeBetting(result: PredictionResult, odds: OddsInput): Betti
   const mlValuePct = Math.max(homeEdge, awayEdge) * 100
 
   const projectedMargin = result.projectedMargin
-  const runLineStd = 2.45
+  // Recalibrated from 2.45 to 5.5 via MLE fit against 1,423 graded 2026 run-line outcomes.
+  // At 2.45 the model was badly overconfident that projected favorites would cover -1.5
+  // (actual cover rate on those picks was ~40%, well below what 2.45 implied), which lost
+  // -95 units betting every non-pass run-line recommendation over the sample.
+  const runLineStd = 5.5
   const homeCoverProb = clamp(1 - normCDF((Math.abs(odds.runLine) - projectedMargin) / runLineStd), 0.08, 0.86)
   const awayCoverProb = 1 - homeCoverProb
   const homeRunLineImplied = americanToImplied(odds.runLineHomeOdds)
@@ -43,7 +47,14 @@ export function analyzeBetting(result: PredictionResult, odds: OddsInput): Betti
   const runLineEdge = Math.max(homeRunLineEdge, awayRunLineEdge) * 100
 
   const totalGap = result.projectedTotal - odds.overUnder
-  const totalStdDev = 2.15
+  // Recalibrated from 2.15 to 20 against 1,423 graded 2026 totals. Log-loss was swept from
+  // 2.15 up through 5,000 and never beat the score of just guessing the league-average over
+  // rate for every game — projectedTotal currently has no measurable edge over the market
+  // total in this sample. 20 is set high enough that O/U edge% will rarely clear the pass
+  // threshold until the total-projection logic itself is improved (see MLB_RESIDUAL_MODEL_PLAN.md),
+  // rather than continuing to generate confident-looking picks with no real signal behind them
+  // (totals lost -101.5 units betting every non-pass recommendation over the sample).
+  const totalStdDev = 20
   const pOver = clamp(1 - normCDF((odds.overUnder - result.projectedTotal) / totalStdDev), 0.1, 0.9)
   const pUnder = 1 - pOver
   const overImplied = americanToImplied(odds.overOdds)

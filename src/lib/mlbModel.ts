@@ -542,8 +542,12 @@ export function predictGame(input: PredictGameInput): PredictionResult {
   const projectedTotal = projectedHomeRuns + projectedAwayRuns
   const projectedMargin = projectedHomeRuns - projectedAwayRuns
 
-  // #2: win prob sigma scales with run environment — higher-scoring games have wider margin variance
-  const winProbSigma = clamp(1.82 + (projectedTotal - 9.0) * 0.055, 1.5, 2.2)
+  // #2: win prob sigma scales with run environment — higher-scoring games have wider margin variance.
+  // Base recalibrated from 1.82 to 7.5 via MLE fit against 1,423 graded 2026 predictions — the prior
+  // value implied a much narrower margin distribution than MLB games actually produce (empirical
+  // margin std ~4.6 runs), which made homeWinProb badly overconfident (Brier score worse than a
+  // constant 50/50 baseline).
+  const winProbSigma = clamp(7.5 + (projectedTotal - 9.0) * 0.22, 6.5, 8.5)
   const winProb = clamp(1 / (1 + Math.exp(-(projectedMargin / winProbSigma))), 0.09, 0.91)
   const marginSigma = clamp(2.45 + (projectedTotal - 9.0) * 0.05, 2.0, 3.0)
   const homeRunLineCoverProb = clamp(1 - normCDF((1.5 - projectedMargin) / marginSigma), 0.08, 0.86)

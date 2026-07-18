@@ -303,51 +303,58 @@ export function ScheduleAnalysis({
     ]
 
     // Build rows from UI state (simmed games currently loaded)
+    const uiSeenCounts = new Map<string, number>()
     const uiLines = enrichedRows
       .filter((entry) => entry.row.result)
-      .map(({ row, analysis, composite }) => ({
-        gameTime: row.game.gameTime,
-        lookupKey: lookupKey(exportDate, row.game.homeTeam, row.game.awayTeam),
-        line: [
-          exportDate,
-          row.game.gameTime,
-          exportTeamLabel(row.game.awayTeam, teams),
-          exportTeamLabel(row.game.homeTeam, teams),
-          row.awayStarter.name,
-          row.homeStarter.name,
-          row.result?.projectedAwayRuns.toFixed(2) ?? '',
-          row.result?.projectedHomeRuns.toFixed(2) ?? '',
-          row.result?.projectedTotal.toFixed(2) ?? '',
-          row.result?.projectedMargin.toFixed(2) ?? '',
-          row.result ? (row.result.homeWinProb * 100).toFixed(1) : '',
-          row.result ? (row.result.awayWinProb * 100).toFixed(1) : '',
-          analysis?.mlValueSide === 'none' ? 'PASS' : `${analysis?.mlValueSide?.toUpperCase()} ML`,
-          analysis?.mlValuePct.toFixed(1) ?? '',
-          analysis?.runLineRec.toUpperCase() ?? 'PASS',
-          analysis?.runLineEdge.toFixed(1) ?? '',
-          analysis?.ouRec.toUpperCase() ?? 'PASS',
-          analysis?.ouEdgePct.toFixed(1) ?? '',
-          row.odds.overUnder.toFixed(1),
-          String(row.odds.homeMoneyline),
-          String(row.odds.awayMoneyline),
-          String(row.odds.runLine),
-          String(row.odds.runLineHomeOdds),
-          String(row.odds.runLineAwayOdds),
-          String(row.odds.overOdds),
-          String(row.odds.underOdds),
-          row.awayLineupConfidence,
-          row.homeLineupConfidence,
-          row.starterLastUpdated ?? 'Unknown',
-          row.weatherLastUpdated ?? 'Unknown',
-          row.sharpInput?.lastUpdated ?? 'Unknown',
-          composite?.primaryMarket ?? 'PASS',
-          composite?.pick ?? 'PASS',
-          composite?.score.toFixed(1) ?? '0.0',
-          composite?.tier ?? 'PASS',
-          composite?.reasons.join(' | ') ?? '',
-          lookupKey(exportDate, row.game.homeTeam, row.game.awayTeam),
-        ].map(csvEscape).join(','),
-      }))
+      .map(({ row, analysis, composite }) => {
+        const baseLookupKey = lookupKey(exportDate, row.game.homeTeam, row.game.awayTeam)
+        const seqCount = (uiSeenCounts.get(baseLookupKey) ?? 0) + 1
+        uiSeenCounts.set(baseLookupKey, seqCount)
+        const rowLookupKey = seqCount === 1 ? baseLookupKey : `${baseLookupKey}_${seqCount}`
+        return {
+          gameTime: row.game.gameTime,
+          lookupKey: rowLookupKey,
+          line: [
+            exportDate,
+            row.game.gameTime,
+            exportTeamLabel(row.game.awayTeam, teams),
+            exportTeamLabel(row.game.homeTeam, teams),
+            row.awayStarter.name,
+            row.homeStarter.name,
+            row.result?.projectedAwayRuns.toFixed(2) ?? '',
+            row.result?.projectedHomeRuns.toFixed(2) ?? '',
+            row.result?.projectedTotal.toFixed(2) ?? '',
+            row.result?.projectedMargin.toFixed(2) ?? '',
+            row.result ? (row.result.homeWinProb * 100).toFixed(1) : '',
+            row.result ? (row.result.awayWinProb * 100).toFixed(1) : '',
+            analysis?.mlValueSide === 'none' ? 'PASS' : `${analysis?.mlValueSide?.toUpperCase()} ML`,
+            analysis?.mlValuePct.toFixed(1) ?? '',
+            analysis?.runLineRec.toUpperCase() ?? 'PASS',
+            analysis?.runLineEdge.toFixed(1) ?? '',
+            analysis?.ouRec.toUpperCase() ?? 'PASS',
+            analysis?.ouEdgePct.toFixed(1) ?? '',
+            row.odds.overUnder.toFixed(1),
+            String(row.odds.homeMoneyline),
+            String(row.odds.awayMoneyline),
+            String(row.odds.runLine),
+            String(row.odds.runLineHomeOdds),
+            String(row.odds.runLineAwayOdds),
+            String(row.odds.overOdds),
+            String(row.odds.underOdds),
+            row.awayLineupConfidence,
+            row.homeLineupConfidence,
+            row.starterLastUpdated ?? 'Unknown',
+            row.weatherLastUpdated ?? 'Unknown',
+            row.sharpInput?.lastUpdated ?? 'Unknown',
+            composite?.primaryMarket ?? 'PASS',
+            composite?.pick ?? 'PASS',
+            composite?.score.toFixed(1) ?? '0.0',
+            composite?.tier ?? 'PASS',
+            composite?.reasons.join(' | ') ?? '',
+            rowLookupKey,
+          ].map(csvEscape).join(','),
+        }
+      })
 
     // Supplement with DB predictions for games not loaded in the UI (e.g. already-started games)
     const uiLookupKeys = new Set(uiLines.map((r) => r.lookupKey))
